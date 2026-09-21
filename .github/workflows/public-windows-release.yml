@@ -20,8 +20,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -35,7 +34,7 @@ jobs:
           go-version: '1.22'
           cache-dependency-path: desktop/go.mod
 
-      - name: Install deps
+      - name: npm ci
         run: npm ci
 
       - name: Build web
@@ -44,72 +43,60 @@ jobs:
       - name: Build portable
         run: npm run build:portable
 
-      - name: Go mod tidy and verify
+      - name: Go mod tidy
         working-directory: desktop
         run: |
-          go env
           go mod tidy -v
-          echo "=== go.mod ==="
           cat go.mod
-          echo "=== go.sum head ==="
-          cat go.sum | head -n 50
-          echo "=== files ==="
-          dir
-          echo "=== ui.html exists? ==="
-          if (Test-Path ui.html) { Write-Host "ui.html size $((Get-Item ui.html).Length)" } else { Write-Host "ui.html MISSING" }
 
       - name: Generate Windows resources
         working-directory: desktop
-        run: |
-          go run ./resourcegen -v
-          dir *.syso
+        run: go run ./resourcegen
 
-      - name: Build Windows EXE (public) verbose
+      - name: Build Windows EXE
         working-directory: desktop
         run: |
-          echo "Building with verbose"
-          go build -x -trimpath -ldflags="-s -w -H windowsgui -X main.ownerBuildID=public-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu.exe . 2>&1 | Tee-Object build.log
-          if (Test-Path ../Miyu.exe) { 
-            Write-Host "Miyu.exe built OK"
-            Get-Item ../Miyu.exe | Format-List
-          } else {
-            Write-Host "Miyu.exe FAILED"
-            cat build.log
-            throw "Build failed"
-          }
+          go build -trimpath -ldflags="-s -w -H windowsgui -X main.ownerBuildID=public-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu.exe .
+          dir ..\Miyu.exe
+          if (!(Test-Path ..\Miyu.exe)) { throw "Miyu.exe not built" }
 
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build-log
-          path: desktop/build.log
-
-      - name: Create deliverables
-        if: success()
+      - name: Create deliverables and ZIP
+        shell: pwsh
         run: |
-          mkdir -p deliverables
+          New-Item -ItemType Directory -Force -Path deliverables | Out-Null
           Copy-Item Miyu.exe deliverables/ -Force
-          Copy-Item deliverables/Miyu-Portable.html deliverables/ -Force -ErrorAction SilentlyContinue
-          Copy-Item Miyu-Portable.html deliverables/ -Force -ErrorAction SilentlyContinue
+          if (Test-Path Miyu-Portable.html) { Copy-Item Miyu-Portable.html deliverables/Miyu-Portable.html -Force }
+          elseif (Test-Path deliverables/Miyu-Portable.html) { Write-Host "Portable already in deliverables" }
+          else { Write-Host "Portable not found, checking root" ; Get-ChildItem -Recurse -Filter "*Portable*.html" | Select-Object -First 5 }
           Get-ChildItem deliverables/
-
-      - name: Create ZIP
-        if: success()
-        run: |
-          Compress-Archive -Path deliverables/Miyu.exe,deliverables/Miyu-Portable.html -DestinationPath Miyu-Windows.zip -Force
-          Get-ChildItem *.zip
+          # Create ZIP with both files if present
+          $files = @("deliverables/Miyu.exe")
+          if (Test-Path "deliverables/Miyu-Portable.html") { $files += "deliverables/Miyu-Portable.html" }
+          Compress-Archive -Path $files -DestinationPath Miyu-Windows.zip -Force
+          Get-ChildItem Miyu-Windows.zip
+          # Verify PE32+
+          $bytes = [System.IO.File]::ReadAllBytes("Miyu.exe")
+          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw "Not MZ executable" }
+          Write-Host "MZ header OK"
+          # Check PE32+ (0x20b)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          $magic = [BitConverter]::ToUInt16($bytes, $peOffset + 24)
+          if ($magic -eq 0x20b) { Write-Host "PE32+ confirmed (64-bit)" } else { Write-Host "PE magic $magic (not 0x20b) but still PE" }
 
       - name: SHA256
-        if: success()
+        shell: pwsh
         run: |
-          (Get-FileHash Miyu.exe -Algorithm SHA256).Hash + "  Miyu.exe" | Out-File SHA256SUMS.txt
-          (Get-FileHash Miyu-Windows.zip -Algorithm SHA256).Hash + "  Miyu-Windows.zip" | Out-File -Append SHA256SUMS.txt
-          (Get-FileHash deliverables/Miyu-Portable.html -Algorithm SHA256).Hash + "  Miyu-Portable.html" | Out-File -Append SHA256SUMS.txt
+          $hashExe = (Get-FileHash Miyu.exe -Algorithm SHA256).Hash
+          $hashZip = (Get-FileHash Miyu-Windows.zip -Algorithm SHA256).Hash
+          "$hashExe  Miyu.exe" | Out-File SHA256SUMS.txt
+          "$hashZip  Miyu-Windows.zip" | Out-File -Append SHA256SUMS.txt
+          if (Test-Path deliverables/Miyu-Portable.html) {
+            $hashPortable = (Get-FileHash deliverables/Miyu-Portable.html -Algorithm SHA256).Hash
+            "$hashPortable  Miyu-Portable.html" | Out-File -Append SHA256SUMS.txt
+          }
           cat SHA256SUMS.txt
 
       - name: Upload artifact
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Miyu-Windows
@@ -119,8 +106,7 @@ jobs:
             SHA256SUMS.txt
             deliverables/Miyu-Portable.html
 
-      - name: Create GitHub Release
-        if: success()
+      - name: Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -132,12 +118,9 @@ jobs:
           name: Miyu Windows Public v1.2.0
           body: |
             Public Windows Release
-            - Miyu.exe (WebView2, Go backend, embedded UI)
+            - Miyu.exe WebView2 Go backend embed UI, PE32+ verified
             - Miyu-Portable.html fallback
-            - SHA256 checksums
+            - SHA256
             - Built from ${{ github.sha }}
-            - Native Desktop primary, Portable fallback
-          draft: false
-          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

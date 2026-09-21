@@ -32,16 +32,31 @@ jobs:
           go-version: '1.22'
           cache-dependency-path: desktop/go.mod
 
-      - name: Install Linux deps (tolerant)
+      - name: Install Linux deps
         run: |
           sudo apt-get update
-          # Try 4.1 first (Ubuntu 24.04), fallback to 4.0 (Ubuntu 22.04)
           sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config || true
-          sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev || true
-          # Show what we have
+          # Try to install both webkit versions, tolerant
+          sudo apt-get install -y libwebkit2gtk-4.0-dev || echo "4.0 not available"
+          sudo apt-get install -y libwebkit2gtk-4.1-dev || echo "4.1 not available"
+          # Show installed
           pkg-config --modversion gtk+-3.0 || true
-          pkg-config --modversion webkit2gtk-4.0 2>/dev/null || pkg-config --modversion webkit2gtk-4.1 2>/dev/null || echo "webkit not found via pkg-config"
+          pkg-config --modversion webkit2gtk-4.0 || echo "webkit2gtk-4.0 not found"
+          pkg-config --modversion webkit2gtk-4.1 || echo "webkit2gtk-4.1 not found"
           dpkg -l | grep webkit || true
+          # If only 4.1 exists, create pkg-config alias for 4.0 -> 4.1 via environment hack
+          if pkg-config --exists webkit2gtk-4.1 && ! pkg-config --exists webkit2gtk-4.0; then
+            echo "Only 4.1 found, will set PKG_CONFIG to use 4.1 for 4.0 requests"
+            # Create a wrapper pc file
+            sudo mkdir -p /usr/local/lib/pkgconfig
+            sudo sh -c 'cat > /usr/local/lib/pkgconfig/webkit2gtk-4.0.pc <<EOF
+          Name: WebKitGTK 4.0 alias to 4.1
+          Description: Alias
+          Version: 2.44.0
+          Requires: webkit2gtk-4.1
+          EOF'
+            echo "PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          fi
 
       - name: npm ci
         run: npm ci
@@ -63,19 +78,26 @@ jobs:
       - name: Build Linux binary amd64
         working-directory: desktop
         run: |
+          set -x
+          # Print pkg-config
+          pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.0 2>&1 | head -n 20 || pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.1 2>&1 | head -n 20 || true
+          # Build with verbose, capture log
           go build -x -trimpath -ldflags="-s -w -X main.ownerBuildID=public-linux-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu-Linux-x86_64 . 2>&1 | tee build.log
+          echo "=== BUILD LOG TAIL ==="
+          tail -n 200 build.log
           file ../Miyu-Linux-x86_64
           ls -lh ../Miyu-Linux-x86_64
-          cat build.log | tail -n 100
 
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-build-log
-          path: desktop/build.log
+      - name: Show build log on failure (always)
+        if: always()
+        working-directory: desktop
+        run: |
+          echo "=== BUILD LOG FULL (last 500 lines) ==="
+          tail -n 500 build.log || echo "no build.log"
+          echo "=== GO ENV ==="
+          go env
 
-      - name: Create AppDir for AppImage
+      - name: Create AppDir
         if: success()
         run: |
           mkdir -p AppDir/usr/bin
@@ -111,14 +133,10 @@ jobs:
           ./appimagetool AppDir Miyu-Linux-x86_64.AppImage || sudo ./appimagetool AppDir Miyu-Linux-x86_64.AppImage || cp Miyu-Linux-x86_64 Miyu-Linux-x86_64.AppImage
           ls -lh *.AppImage || true
 
-      - name: Build .deb package
+      - name: Build deb
         if: success()
         run: |
-          mkdir -p deb/DEBIAN
-          mkdir -p deb/usr/bin
-          mkdir -p deb/usr/share/applications
-          mkdir -p deb/usr/share/icons/hicolor/256x256/apps
-          mkdir -p deb/usr/share/doc/miyu
+          mkdir -p deb/DEBIAN deb/usr/bin deb/usr/share/applications deb/usr/share/icons/hicolor/256x256/apps deb/usr/share/doc/miyu
           cp Miyu-Linux-x86_64 deb/usr/bin/miyu
           chmod +x deb/usr/bin/miyu
           cp AppDir/usr/share/applications/miyu.desktop deb/usr/share/applications/ || true
@@ -132,7 +150,7 @@ jobs:
           Depends: libgtk-3-0, libwebkit2gtk-4.0-0 | libwebkit2gtk-4.1-0
           Maintainer: Miyu Studio <miyu@example.com>
           Description: Miyu — a little company, a little magic
-           Animated desktop companion, native Linux, not just Portable HTML.
+           Native Linux, not just Portable HTML.
           EOF
           echo "Copyright 2026 Miyu Studio" > deb/usr/share/doc/miyu/copyright
           dpkg-deb --build deb Miyu-Linux-x86_64.deb
@@ -170,7 +188,6 @@ jobs:
             Public Linux Release
             - AppImage and deb
             - Native Linux, not just Portable HTML
-            - XDG storage, 0600 logs, AES-GCM
             - Built from ${{ github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
