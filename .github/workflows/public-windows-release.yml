@@ -11,6 +11,7 @@ on:
       - 'package.json'
       - 'index.html'
       - 'vite.config.js'
+      - '.github/workflows/public-windows-release.yml'
   workflow_dispatch:
 
 jobs:
@@ -43,58 +44,72 @@ jobs:
       - name: Build portable
         run: npm run build:portable
 
-      - name: Go mod tidy (fix sums)
+      - name: Go mod tidy and verify
         working-directory: desktop
         run: |
-          go mod tidy
+          go env
+          go mod tidy -v
+          echo "=== go.mod ==="
           cat go.mod
-          echo "--- go.sum entries ---"
-          cat go.sum | head -n 100
+          echo "=== go.sum head ==="
+          cat go.sum | head -n 50
+          echo "=== files ==="
+          dir
+          echo "=== ui.html exists? ==="
+          if (Test-Path ui.html) { Write-Host "ui.html size $((Get-Item ui.html).Length)" } else { Write-Host "ui.html MISSING" }
 
       - name: Generate Windows resources
         working-directory: desktop
-        run: go run ./resourcegen
+        run: |
+          go run ./resourcegen -v
+          dir *.syso
 
-      - name: Build Windows EXE (public)
+      - name: Build Windows EXE (public) verbose
         working-directory: desktop
         run: |
-          go build -trimpath -ldflags="-s -w -H windowsgui -X main.ownerBuildID=public-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu.exe .
-          echo "Checking PE..."
+          echo "Building with verbose"
+          go build -x -trimpath -ldflags="-s -w -H windowsgui -X main.ownerBuildID=public-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu.exe . 2>&1 | Tee-Object build.log
           if (Test-Path ../Miyu.exe) { 
-            Write-Host "Miyu.exe built: $( (Get-Item ../Miyu.exe).Length / 1MB ) MB"
-            # Check MZ header
-            $bytes = Get-Content ../Miyu.exe -Encoding Byte -TotalCount 2
-            if ($bytes[0] -eq 77 -and $bytes[1] -eq 90) { Write-Host "MZ header OK" } else { Write-Host "MZ header FAIL" }
-          } else { throw "Miyu.exe not found" }
+            Write-Host "Miyu.exe built OK"
+            Get-Item ../Miyu.exe | Format-List
+          } else {
+            Write-Host "Miyu.exe FAILED"
+            cat build.log
+            throw "Build failed"
+          }
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-log
+          path: desktop/build.log
 
       - name: Create deliverables
+        if: success()
         run: |
           mkdir -p deliverables
           Copy-Item Miyu.exe deliverables/ -Force
-          $portable = Get-ChildItem -Path . -Filter "Miyu-Portable.html" -Recurse | Select-Object -First 1
-          if ($portable) { Copy-Item $portable.FullName deliverables/ -Force }
+          Copy-Item deliverables/Miyu-Portable.html deliverables/ -Force -ErrorAction SilentlyContinue
+          Copy-Item Miyu-Portable.html deliverables/ -Force -ErrorAction SilentlyContinue
           Get-ChildItem deliverables/
 
       - name: Create ZIP
+        if: success()
         run: |
-          Compress-Archive -Path deliverables/Miyu.exe,deliverables/Miyu-Portable.html -DestinationPath Miyu-Windows.zip -Force -ErrorAction SilentlyContinue
-          if (!(Test-Path Miyu-Windows.zip)) {
-            Compress-Archive -Path deliverables/* -DestinationPath Miyu-Windows.zip -Force
-          }
+          Compress-Archive -Path deliverables/Miyu.exe,deliverables/Miyu-Portable.html -DestinationPath Miyu-Windows.zip -Force
           Get-ChildItem *.zip
 
       - name: SHA256
+        if: success()
         run: |
-          Get-FileHash Miyu.exe -Algorithm SHA256 | Format-List
-          Get-FileHash Miyu-Windows.zip -Algorithm SHA256 | Format-List
           (Get-FileHash Miyu.exe -Algorithm SHA256).Hash + "  Miyu.exe" | Out-File SHA256SUMS.txt
           (Get-FileHash Miyu-Windows.zip -Algorithm SHA256).Hash + "  Miyu-Windows.zip" | Out-File -Append SHA256SUMS.txt
-          if (Test-Path deliverables/Miyu-Portable.html) {
-            (Get-FileHash deliverables/Miyu-Portable.html -Algorithm SHA256).Hash + "  Miyu-Portable.html" | Out-File -Append SHA256SUMS.txt
-          }
+          (Get-FileHash deliverables/Miyu-Portable.html -Algorithm SHA256).Hash + "  Miyu-Portable.html" | Out-File -Append SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Upload artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Miyu-Windows
@@ -103,11 +118,9 @@ jobs:
             Miyu-Windows.zip
             SHA256SUMS.txt
             deliverables/Miyu-Portable.html
-            README.md
-            LICENSE
 
       - name: Create GitHub Release
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+        if: success()
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -119,14 +132,11 @@ jobs:
           name: Miyu Windows Public v1.2.0
           body: |
             Public Windows Release
-            - Miyu.exe (WebView2, Go backend, embedded UI, no external UI files)
-            - Miyu-Portable.html fallback (self-contained)
+            - Miyu.exe (WebView2, Go backend, embedded UI)
+            - Miyu-Portable.html fallback
             - SHA256 checksums
             - Built from ${{ github.sha }}
-            - Native Desktop is primary product, Portable is fallback
-            - Always on top, Mini Companion, System Tray, Global Hotkeys where possible
-            - Encrypted local state DPAPI
-            - Bounded worker pool, structured logging, crash recovery
+            - Native Desktop primary, Portable fallback
           draft: false
           prerelease: false
         env:

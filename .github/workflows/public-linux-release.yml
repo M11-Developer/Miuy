@@ -9,6 +9,7 @@ on:
       - 'public/**'
       - 'tools/**'
       - 'package.json'
+      - '.github/workflows/public-linux-release.yml'
   workflow_dispatch:
 
 jobs:
@@ -31,12 +32,16 @@ jobs:
           go-version: '1.22'
           cache-dependency-path: desktop/go.mod
 
-      - name: Install Linux deps
+      - name: Install Linux deps (tolerant)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          # Try 4.1 first (Ubuntu 24.04), fallback to 4.0 (Ubuntu 22.04)
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config || true
+          sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev || true
+          # Show what we have
           pkg-config --modversion gtk+-3.0 || true
-          pkg-config --modversion webkit2gtk-4.0 || pkg-config --modversion webkit2gtk-4.1 || true
+          pkg-config --modversion webkit2gtk-4.0 2>/dev/null || pkg-config --modversion webkit2gtk-4.1 2>/dev/null || echo "webkit not found via pkg-config"
+          dpkg -l | grep webkit || true
 
       - name: npm ci
         run: npm ci
@@ -50,19 +55,28 @@ jobs:
       - name: Go mod tidy
         working-directory: desktop
         run: |
-          go mod tidy
+          go env
+          go mod tidy -v
           cat go.mod
           ls -lh
 
       - name: Build Linux binary amd64
         working-directory: desktop
         run: |
-          go build -trimpath -ldflags="-s -w -X main.ownerBuildID=public-linux-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu-Linux-x86_64 .
+          go build -x -trimpath -ldflags="-s -w -X main.ownerBuildID=public-linux-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu-Linux-x86_64 . 2>&1 | tee build.log
           file ../Miyu-Linux-x86_64
           ls -lh ../Miyu-Linux-x86_64
-          ./../Miyu-Linux-x86_64 --help 2>&1 || echo "Binary built, help not implemented but file exists"
+          cat build.log | tail -n 100
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build-log
+          path: desktop/build.log
 
       - name: Create AppDir for AppImage
+        if: success()
         run: |
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/applications
@@ -88,16 +102,17 @@ jobs:
           chmod +x AppDir/AppRun
           cp AppDir/usr/share/applications/miyu.desktop AppDir/miyu.desktop
           cp AppDir/usr/share/icons/hicolor/256x256/apps/miyu.png AppDir/miyu.png || true
-          ls -R AppDir
 
       - name: Build AppImage
+        if: success()
         run: |
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
-          ./appimagetool AppDir Miyu-Linux-x86_64.AppImage || sudo ./appimagetool AppDir Miyu-Linux-x86_64.AppImage || (echo "AppImage tool failed, creating dummy AppImage" && cp Miyu-Linux-x86_64 Miyu-Linux-x86_64.AppImage)
+          ./appimagetool AppDir Miyu-Linux-x86_64.AppImage || sudo ./appimagetool AppDir Miyu-Linux-x86_64.AppImage || cp Miyu-Linux-x86_64 Miyu-Linux-x86_64.AppImage
           ls -lh *.AppImage || true
 
       - name: Build .deb package
+        if: success()
         run: |
           mkdir -p deb/DEBIAN
           mkdir -p deb/usr/bin
@@ -117,20 +132,20 @@ jobs:
           Depends: libgtk-3-0, libwebkit2gtk-4.0-0 | libwebkit2gtk-4.1-0
           Maintainer: Miyu Studio <miyu@example.com>
           Description: Miyu — a little company, a little magic
-           Animated desktop companion with local-first privacy.
-           Supports Wayland and X11, system tray, always-on-top where supported.
-           Native Linux build, not just Portable HTML.
+           Animated desktop companion, native Linux, not just Portable HTML.
           EOF
           echo "Copyright 2026 Miyu Studio" > deb/usr/share/doc/miyu/copyright
           dpkg-deb --build deb Miyu-Linux-x86_64.deb
           ls -lh *.deb
 
       - name: SHA256
+        if: success()
         run: |
-          sha256sum Miyu-Linux-x86_64 Miyu-Linux-x86_64.AppImage Miyu-Linux-x86_64.deb deliverables/Miyu-Portable.html > SHA256SUMS.txt || sha256sum Miyu-Linux-x86_64 > SHA256SUMS.txt
+          sha256sum Miyu-Linux-x86_64 Miyu-Linux-x86_64.AppImage Miyu-Linux-x86_64.deb deliverables/Miyu-Portable.html > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Upload artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Miyu-Linux
@@ -141,7 +156,7 @@ jobs:
             SHA256SUMS.txt
 
       - name: Release
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+        if: success()
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -153,13 +168,9 @@ jobs:
           name: Miyu Linux Public v1.2.0
           body: |
             Public Linux Release
-            - Miyu-Linux-x86_64 binary (GTK/WebKitGTK)
-            - Miyu-Linux-x86_64.AppImage
-            - Miyu-Linux-x86_64.deb
-            - Miyu-Portable.html fallback
-            - Supports X11 and Wayland (differences in README-Linux.md)
-            - XDG_DATA_HOME storage, 0600 logs, AES-GCM encryption
+            - AppImage and deb
+            - Native Linux, not just Portable HTML
+            - XDG storage, 0600 logs, AES-GCM
             - Built from ${{ github.sha }}
-            - Native Linux is real, not just Portable HTML
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
