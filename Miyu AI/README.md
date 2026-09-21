@@ -1,7 +1,7 @@
 # Miyu Hoshino
 ### A little company. A little magic.
 
-An animated, local-first companion inspired by your pink-and-black catgirl reference. Miyu is a fictional adult character, age 23: warm-hearted, curious, and a little playful.
+An animated, local-first companion and safe play lab inspired by your pink-and-black catgirl reference. Miyu is a fictional digital character: warm-hearted, curious, and a little playful. The app now supports an age profile from 3 through 18+, Arabic/English conversation, gentle moderation, and offline toy animations.
 
 **This is a polished interactive prototype, not a finished commercial AAA game.** It uses original AI-generated 2D character art, a deformable WebGL mesh, custom expression frames, and prerecorded synthetic voice reactions. It is not a 3D model or a Live2D rig.
 
@@ -36,6 +36,11 @@ A browser may restrict camera, dictation, or API calls depending on permissions 
 - Explicitly saved memories, chat and memory export, and local data reset.
 - Portrait export. **Camera frames are never included.**
 - Clearly marked scripted preview chat, plus optional real AI connections.
+- **Miyu Play Lab:** type or say “Hold a toy car” / “امسكي عربية لعبة” to create a local animated toy prop; the avatar wiggles while the toy floats. It is a safe, lightweight visual generator, not a claim of image-model generation.
+- **Age-aware safe play:** a parent or child can choose 3–17 or 18+ safe mode. All modes are non-sexual and include English/Arabic profanity filtering; hurtful input produces a fictional sad reaction and is not sent to a model.
+- Arabic speech recognition and device text-to-speech when the operating system provides Arabic voices. Optional full-duplex mode keeps an explicitly enabled microphone session open while Miyu speaks; dictated text is still never sent automatically.
+- Free local model starters are listed in Settings: Qwen 3 4B, Gemma 3 4B, Llama 3.2 3B, and Phi-4 mini through Ollama. The model files are free to download but are not bundled.
+- An optional Vodafone Cash support note shows `01027653109`; the app never initiates, collects, or tracks a payment.
 
 No model weights, commercial AI subscription, or API credits are bundled.
 
@@ -83,7 +88,7 @@ The API must support the Chat Completions request/response format. The prototype
 - Preview mode sends no chat requests. There are no app analytics, advertising, accounts, subscriptions, or background AI requests.
 - In connected mode, your last conversation messages and explicitly saved memory notes are sent to the **endpoint you choose**, along with a character instruction. Your model provider's privacy and retention policies apply.
 - The native HTTP bridge binds only to `127.0.0.1`, checks the exact local origin and a random session token, blocks insecure remote HTTP, and does not follow model-endpoint redirects.
-- Chat, memories, and preferences are stored **unencrypted** under your device account. Windows: `%LOCALAPPDATA%\Miyu\state.json`; browser: the page's local storage. They are not synced between the native and browser editions.
+- Browser chat, memories, and preferences use the page's local storage. In the Windows app, the state is stored as `%LOCALAPPDATA%\Miyu\state.bin` and protected with Windows DPAPI for the current user account. The native app also writes a redacted structured log to `%LOCALAPPDATA%\Miyu\miyu.log`; it never writes chat text or API keys to that log. Native and browser state are not synced.
 - Settings → Privacy & data can reset the local app state. This cannot delete copies already sent to a provider or exported files. Windows' WebView2 profile cache lives in `%LOCALAPPDATA%\Miyu\WebView2`; close Miyu before removing the whole `%LOCALAPPDATA%\Miyu` folder if you also want to remove that runtime profile.
 
 Miyu is a fictional AI character, not a person or a therapist. The interface does not monitor you or infer your real emotions.
@@ -106,6 +111,14 @@ Miyu is a fictional AI character, not a person or a therapist. The interface doe
 | **Esc** | Close dialog, immersive view, or mini view |
 
 Single-key shortcuts are ignored while you type in a field. Audio ambience does not auto-resume when the app opens again; start it with a click.
+
+## Safety and the desktop architecture
+
+- The Play Lab is intentionally deterministic and local: it maps a child-friendly request to a small set of toy props and animates the prop. It does not upload a camera frame or silently call an image service.
+- Moderation runs before preview or connected chat in the browser UI, and the native model proxy receives only the sanitized conversation. It is a light product safeguard, not a replacement for adult supervision or a provider's policy.
+- The native Go bridge uses a bounded two-worker model pool so model/network calls do not run on the WebView thread. Requests are authenticated with a per-launch token, remote endpoints must use HTTPS, and redirects are rejected.
+- Native state uses Windows DPAPI with atomic replacement. Crash-safe writes and a redacted JSON-lines logger are included. Browser local storage cannot provide the same OS-level encryption guarantee.
+- The UI and assets are embedded into the Windows binary with `embed`. The browser edition remains a no-install fallback. The native wrapper has an opt-in HTTPS release-manifest checker (`MIYU_UPDATE_MANIFEST`) with redirect blocking; a signed release can present a verified update, while this personal prototype never silently executes an unverified download.
 
 ## Build and modify the source
 

@@ -40,6 +40,7 @@ export class MiyuAvatar {
         uniform float u_dance;
         uniform float u_pat;
         uniform float u_hello;
+        uniform float u_hold;
         void main(){
           v_uv=a_uv;
           float x=a_uv.x;
@@ -65,6 +66,9 @@ export class MiyuAvatar {
           p.x+=sin(u_time*9.0)*.004*u_motion*ear*pow(max(0.0,sin(u_time*.53)),16.0);
           // A gentle body greeting / nod, rather than a fake skeletal hand wave.
           p.y+=sin(u_time*4.0)*.005*u_hello*headWeight;
+          // Holding a generated toy adds a soft, readable little bounce.
+          p.x+=sin(u_time*3.2)*.010*u_hold*weight;
+          p.y+=abs(sin(u_time*3.2))*.006*u_hold*weight;
           vec2 pixel=u_origin+p*u_size;
           vec2 clip=pixel/u_resolution*2.0-1.0;
           gl_Position=vec4(clip.x,-clip.y,0.0,1.0);
@@ -117,7 +121,7 @@ export class MiyuAvatar {
         gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
       });
-      this.uniforms={};['resolution','size','origin','time','motion','look','dance','pat','hello','base','blinkTex','talkTex','blink','mouth','palette','blush'].forEach(n=>this.uniforms[n]=gl.getUniformLocation(this.program,'u_'+n));
+      this.uniforms={};['resolution','size','origin','time','motion','look','dance','pat','hello','hold','base','blinkTex','talkTex','blink','mouth','palette','blush'].forEach(n=>this.uniforms[n]=gl.getUniformLocation(this.program,'u_'+n));
       gl.uniform1i(this.uniforms.base,0);gl.uniform1i(this.uniforms.blinkTex,1);gl.uniform1i(this.uniforms.talkTex,2);
       gl.clearColor(0,0,0,0);
     }
@@ -155,7 +159,7 @@ export class MiyuAvatar {
       const gl=this.gl,u=this.uniforms;gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(this.program);
       gl.uniform2f(u.resolution,this.width,this.height);gl.uniform2f(u.size,w,h);gl.uniform2f(u.origin,x,y);
       gl.uniform1f(u.time,time);gl.uniform1f(u.motion,motion);gl.uniform2f(u.look,opts.tracking&&!opts.reduced?this.look.x:0,opts.tracking&&!opts.reduced?this.look.y:0);
-      gl.uniform1f(u.dance,this.action==='dance'&&motion?act:0);gl.uniform1f(u.pat,this.action==='pat'&&motion?act:0);gl.uniform1f(u.hello,this.action==='hello'&&motion?act:0);
+      gl.uniform1f(u.dance,this.action==='dance'&&motion?act:0);gl.uniform1f(u.pat,this.action==='pat'&&motion?act:0);gl.uniform1f(u.hello,this.action==='hello'&&motion?act:0);gl.uniform1f(u.hold,this.action==='hold'&&motion?act:0);
       gl.uniform1f(u.blink,blink);gl.uniform1f(u.mouth,opts.reduced?0:this.mouth);
       gl.uniform1f(u.palette,opts.palette==='lilac'?1:opts.palette==='peach'?2:0);gl.uniform1f(u.blush,isHappy?act:0);
       gl.drawArrays(gl.TRIANGLES,0,this.vertexCount);

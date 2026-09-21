@@ -1,4 +1,4 @@
-# Miyu 1.0 — verification notes
+# Miyu 1.1 — verification notes
 
 ## Browser UI: 22 automated functional checks
 Tested with Playwright Chromium in this Linux workspace.
@@ -26,7 +26,15 @@ Tested with Playwright Chromium in this Linux workspace.
 - Reload preserves notes/settings and resets key/media state.
 - 390-pixel mobile layout has no horizontal overflow.
 - No JavaScript runtime exceptions in the tested flows.
+- Play Lab maps Arabic/English toy requests to a generated toy prop, updates the game state, and animates the prop without a network request.
+- Age/language profile changes document direction, Arabic voice/dictation selection, and safe mode labels; the profanity filter masks rude input before it reaches an AI endpoint.
+- Full-duplex dictation is opt-in and keeps recognition independent from speech synthesis; dictated text is never auto-submitted.
+- Free Ollama model cards select a local endpoint without bundling model weights; Vodafone Cash support only copies/displays the supplied number and never initiates a payment.
 - The self-contained portable HTML loads and reacts with HTTP(S) network blocked.
+
+## Native model bridge and desktop services
+
+The existing native tests still cover endpoint policy, origin/session authorization, compatible Chat Completions and Ollama responses, redirect refusal, credential redaction, and empty model output. The Go bridge now additionally has a bounded two-worker pool, JSON-lines logging with no conversation payloads, DPAPI-protected state writes, one-time plaintext migration, and an opt-in HTTPS update-manifest check. Cross-compiling the Windows binary is still required to execute the DPAPI/WebView2 paths.
 
 ## Native model bridge: 8 Go tests
 

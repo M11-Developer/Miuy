@@ -3,7 +3,8 @@ A little company. A little magic.
 
 1. Extract this ZIP before opening the app.
 2. Double-click Miyu.exe (Windows 10/11, 64-bit).
-3. Try Say hello, Head pat, a new scene, or the Focus room.
+3. Open Play Lab, choose a safe age/language profile, then try “امسكي عربية لعبة” or “Hold a toy car”.
+4. Try Say hello, Head pat, a new scene, or the Focus room.
 
 No installation of the app is required. It needs Microsoft's Edge WebView2
 Runtime, normally present on Windows 10/11. If it is missing, use the
@@ -17,8 +18,9 @@ could not be tested in the Linux build workspace; the UI and model proxy
 were tested separately. See TESTING.md.
 
 STARTS IN OFFLINE PREVIEW
-Animations, voice reactions, rooms, ambience, focus tools, and memories
-work straight away. Preview chat uses prepared replies, not a real LLM.
+Animations, voice reactions, Arabic-ready Play Lab toy animations, age-aware
+safe play, rooms, ambience, focus tools, and memories work straight away.
+Preview chat uses prepared replies, not a real LLM. Camera and microphone start off.
 
 FOR REAL AI CHAT
 Open Settings & privacy -> AI connection.

@@ -22,12 +22,12 @@ func main() {
 	if err := rs.SetIcon(winres.ID(1), icon); err != nil {
 		log.Fatal(err)
 	}
-	rs.SetManifest(winres.AppManifest{Identity: winres.AssemblyIdentity{Name: "Miyu.Companion", Version: [4]uint16{1, 0, 0, 0}}, Description: "Miyu animated desktop companion", Compatibility: winres.Win10AndAbove, ExecutionLevel: winres.AsInvoker, DPIAwareness: winres.DPIPerMonitorV2, LongPathAware: true})
-	vi := version.Info{FileVersion: [4]uint16{1, 0, 0, 0}, ProductVersion: [4]uint16{1, 0, 0, 0}, Type: version.App}
+	rs.SetManifest(winres.AppManifest{Identity: winres.AssemblyIdentity{Name: "Miyu.Companion", Version: [4]uint16{1, 1, 0, 0}}, Description: "Miyu animated desktop companion", Compatibility: winres.Win10AndAbove, ExecutionLevel: winres.AsInvoker, DPIAwareness: winres.DPIPerMonitorV2, LongPathAware: true})
+	vi := version.Info{FileVersion: [4]uint16{1, 1, 0, 0}, ProductVersion: [4]uint16{1, 1, 0, 0}, Type: version.App}
 	vi.Set(version.LangDefault, version.ProductName, "Miyu")
 	vi.Set(version.LangDefault, version.FileDescription, "Miyu — a little company, a little magic")
-	vi.Set(version.LangDefault, version.FileVersion, "1.0.0")
-	vi.Set(version.LangDefault, version.ProductVersion, "1.0.0")
+	vi.Set(version.LangDefault, version.FileVersion, "1.1.0")
+	vi.Set(version.LangDefault, version.ProductVersion, "1.1.0")
 	vi.Set(version.LangDefault, version.OriginalFilename, "Miyu.exe")
 	vi.Set(version.LangDefault, version.Comments, "Unsigned personal prototype. No model weights bundled.")
 	rs.SetVersionInfo(vi)

@@ -181,8 +181,9 @@ func callModel(ctx context.Context, c ChatRequest) (string, error) {
 	return strings.TrimSpace(content), nil
 }
 
-func chatHandler(token, origin string) http.HandlerFunc {
+func chatHandler(token, origin string, logs ...*eventLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logEvent := func(name string, fields map[string]any) { if len(logs) > 0 && logs[0] != nil { logs[0].Event(name, fields) } }
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		fail := func(status int, message string) {
@@ -213,11 +214,14 @@ func chatHandler(token, origin string) http.HandlerFunc {
 			fail(http.StatusBadRequest, err.Error())
 			return
 		}
-		text, err := callModel(r.Context(), c)
+		logEvent("model_request", map[string]any{"provider": c.Provider, "model": c.Model, "messages": len(c.Messages)})
+		text, err := modelWorkers.Do(r.Context(), c)
 		if err != nil {
+			logEvent("model_error", map[string]any{"provider": c.Provider, "model": c.Model})
 			fail(http.StatusBadGateway, err.Error())
 			return
 		}
+		logEvent("model_success", map[string]any{"provider": c.Provider, "model": c.Model, "output_bytes": len(text)})
 		_ = json.NewEncoder(w).Encode(map[string]string{"content": text})
 	}
 }
