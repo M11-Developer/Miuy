@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f8f7f4" />
+  <meta name="description" content="Meet Miyu. A private, customizable animated companion for your everyday moments." />
+  <link rel="icon" href="/assets/icon.png" />
+  <title>Miyu — a little company, a little magic</title>
+</head>
+<body>
+  <div class="app-shell" id="app">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="Miyu home"><span class="brand-mark"><i data-lucide="cat"></i></span><span>miyu<span class="brand-dot">.</span></span></a>
+      <span class="brand-caption">A LITTLE COMPANY, A LITTLE MAGIC</span>
+      <div class="nav-label">YOUR LITTLE WORLD</div>
+      <nav aria-label="Main navigation">
+        <button class="nav-item active" data-nav="companion" aria-label="Companion"><i data-lucide="house"></i><span>Companion</span><span class="nav-dot"></span></button>
+        <button class="nav-item" data-nav="personalize" aria-label="Make it yours"><i data-lucide="palette"></i><span>Make it yours</span></button>
+        <button class="nav-item" data-nav="focus" aria-label="Focus room"><i data-lucide="coffee"></i><span>Focus room</span></button>
+        <button class="nav-item" data-nav="memories" aria-label="Little memories"><i data-lucide="book-heart"></i><span>Little memories</span><span id="memory-count" class="nav-count">0</span></button>
+      </nav>
+      <div class="sidebar-note">
+        <div class="note-orbit"><i data-lucide="flower-2"></i><span>✦</span></div>
+        <p>Good company.<br>No special occasion.</p>
+        <span>Come as you are.</span>
+      </div>
+      <div class="sidebar-bottom">
+        <button class="nav-item" data-nav="settings" aria-label="Settings and privacy"><i data-lucide="sliders-horizontal"></i><span>Settings & privacy</span></button>
+        <button class="meet-miyu" data-action="about" aria-label="Meet Miyu"><img src="/assets/avatar.webp" alt="Miyu's portrait" /><span><strong>Meet Miyu</strong><small>A little introduction</small></span><i data-lucide="arrow-up-right"></i></button>
+        <div class="local-note"><i data-lucide="shield-check"></i><span>On your device. In your control.</span></div>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumb"><i data-lucide="sparkles"></i><span>Your space</span><span class="slash">/</span><strong id="page-label">Companion</strong></div>
+        <div class="topbar-actions">
+          <button class="connection-pill" id="connection-pill" data-action="connect"><span class="status-dot"></span><span id="connection-label">Offline preview</span><i data-lucide="chevron-down"></i></button>
+          <span class="topbar-divider"></span>
+          <button class="download-button" id="download-button" data-action="download"><i data-lucide="monitor-down"></i><span>Get desktop app</span></button>
+        </div>
+      </header>
+
+      <main>
+        <div class="page-heading">
+          <div><div class="eyebrow"><span class="tiny-star">✦</span> A SOFTER CORNER OF YOUR DAY</div><h1>A little company. <em>A little magic.</em></h1><p>Settle in. Miyu’s happy to see you.</p></div>
+          <div class="day-note"><i data-lucide="sun"></i><span id="day-date">YOUR MOMENT</span><strong>Make yourself at home.</strong></div>
+        </div>
+
+        <div class="companion-grid">
+          <section class="studio-column" aria-label="Animated companion">
+            <div class="stage-card">
+              <div id="stage" class="stage" data-scene="room">
+                <div class="scene-background" id="scene-background"></div>
+                <div class="scene-wash"></div>
+                <div class="studio-deco"><span>✦</span><span>✧</span><span>✦</span></div>
+                <canvas id="avatar-canvas" role="button" aria-label="Give animated Miyu a head pat" tabindex="0"></canvas>
+                <div class="particle-field" id="particle-field" aria-hidden="true"></div>
+                <div class="stage-top"><span class="presence-pill"><span class="status-dot"></span><span id="mood-label">Feeling cozy</span></span><div class="stage-top-actions"><button class="glass-icon" data-action="snapshot" title="Save a portrait" aria-label="Save a portrait"><i data-lucide="aperture"></i></button><button class="glass-icon" data-action="expand" title="Immersive view" aria-label="Immersive view"><i data-lucide="maximize-2"></i></button></div></div>
+                <div id="speech-bubble" class="speech-bubble">There you are. <span>♡</span></div>
+                <div class="camera-preview" id="camera-preview" hidden><div><span class="record-dot"></span>LOCAL PREVIEW<button id="camera-close" aria-label="Turn camera off"><i data-lucide="x"></i></button></div><video id="camera-video" autoplay playsinline muted></video><small>Only visible to you · never sent</small></div>
+                <div class="character-caption"><div class="caption-eyebrow">YOUR EVERYDAY COMPANION</div><h2>Miyu <em>Hoshino</em><span>✧</span></h2><div class="character-tags"><span>Warm-hearted</span><span>A little curious</span></div></div>
+                <button class="scene-selector" data-action="scenes"><i data-lucide="flower-2"></i><span id="scene-label">Sakura room</span><i data-lucide="chevron-down"></i></button>
+                <div class="stage-grain"></div>
+                <button id="exit-immersive" class="exit-immersive" data-action="expand"><i data-lucide="minimize-2"></i> Back to your space</button>
+              </div>
+              <div class="control-bar">
+                <div class="media-controls">
+                  <button class="control-button" id="mic-button" data-action="mic" aria-label="Turn microphone on" aria-pressed="false"><i data-lucide="mic-off"></i><span>Mic off</span></button>
+                  <button class="control-button" id="audio-button" data-action="audio" aria-label="Mute all audio" aria-pressed="false"><i data-lucide="volume-2"></i><span>Sound on</span></button>
+                  <button class="control-button" id="camera-button" data-action="camera" aria-label="Turn camera on" aria-pressed="false"><i data-lucide="camera-off"></i><span>Camera off</span></button>
+                </div>
+                <div class="control-end"><span class="control-divider"></span><button class="icon-button" id="pin-button" data-action="pin" title="Always on top (Windows app)" aria-label="Always on top" aria-pressed="false"><i data-lucide="pin"></i></button><button class="icon-button" id="compact-button" data-action="compact" title="Mini companion" aria-label="Mini companion"><i data-lucide="picture-in-picture-2"></i></button><button class="icon-button" data-action="personalize" title="Customize Miyu" aria-label="Customize Miyu"><i data-lucide="sliders-horizontal"></i></button></div>
+              </div>
+            </div>
+
+            <div class="interaction-row" aria-label="Character interactions">
+              <button data-reaction="hello"><i data-lucide="hand"></i><span>Say hello</span></button>
+              <button data-reaction="pat"><i data-lucide="heart"></i><span>Head pat</span></button>
+              <button data-reaction="cheer"><i data-lucide="sparkles"></i><span>Cheer me up</span></button>
+              <button data-reaction="rest"><i data-lucide="wind"></i><span>Just breathe</span></button>
+              <button data-reaction="dance"><i data-lucide="music-2"></i><span>Happy dance</span></button>
+            </div>
+
+            <div class="section-heading"><h3>Make this moment yours</h3><span>Little things, big difference.</span></div>
+            <div class="moment-grid">
+              <button class="moment-card scene-moment" data-action="scenes"><div class="moment-art" id="moment-art"></div><div><small>A CHANGE OF SCENERY</small><strong id="moment-scene-label">Somewhere cozy</strong><span>Find your favorite view <i data-lucide="arrow-up-right"></i></span></div></button>
+              <button class="moment-card focus-moment" data-action="focus"><div class="moment-symbol"><i data-lucide="timer"></i></div><small>A LITTLE MOMENTUM</small><strong id="focus-tile-label">Better, together.</strong><span id="focus-tile-status">Start a focus session <i data-lucide="arrow-up-right"></i></span></button>
+              <button class="moment-card sound-moment" data-action="sound"><div class="moment-symbol"><i data-lucide="audio-lines"></i></div><small>SETTLE INTO A SOUND</small><strong>A softer soundtrack.</strong><span id="sound-tile-status">Find your ambience <i data-lucide="arrow-up-right"></i></span></button>
+            </div>
+          </section>
+
+          <section class="chat-panel" aria-label="Conversation with Miyu">
+            <header class="chat-header"><div class="chat-avatar"><img src="/assets/avatar.webp" alt="" /><span></span></div><div class="chat-title"><h3>A moment with Miyu <span>✧</span></h3><p id="chat-state">Here for the little things.</p></div><button class="icon-button" id="chat-menu-button" aria-label="Conversation options" aria-expanded="false"><i data-lucide="ellipsis"></i></button><div id="chat-menu" class="dropdown-menu" hidden><button data-action="connect"><i data-lucide="plug"></i>Connect AI model</button><button data-action="export-chat"><i data-lucide="file-down"></i>Export conversation</button><button data-action="clear-chat"><i data-lucide="trash-2"></i>Clear conversation</button></div></header>
+            <button class="preview-banner" id="preview-banner" data-action="connect"><i data-lucide="sparkles"></i><span>Preview mode <small>Connect an AI to make it personal.</small></span><i data-lucide="arrow-up-right"></i></button>
+            <div class="messages" id="messages" aria-live="polite" aria-relevant="additions"></div>
+            <div class="chat-composer-area">
+              <div id="mic-status" class="mic-status" hidden><span class="record-dot"></span>Listening… speak, then tap the mic to stop.</div>
+              <form class="composer" id="chat-form"><textarea id="chat-input" rows="2" maxlength="2000" placeholder="What’s on your mind?" aria-label="Message Miyu"></textarea><div class="composer-bottom"><span>Just be you.</span><button class="composer-mic icon-button" type="button" data-action="mic" aria-label="Dictate a message"><i data-lucide="mic"></i></button><button id="send-button" class="send-button" type="submit" title="Send message" aria-label="Send message"><i data-lucide="arrow-up"></i></button></div></form>
+              <p class="chat-privacy" id="chat-privacy"><i data-lucide="lock-keyhole"></i>Preview replies are scripted. Your chat stays here.</p>
+            </div>
+          </section>
+        </div>
+        <footer class="page-footer"><span>Made for the everyday. <span class="footer-heart">♡</span></span><span><i data-lucide="leaf"></i>Your room. Your rhythm. Your Miyu.</span><button data-action="shortcuts">Keyboard shortcuts <kbd>?</kbd></button></footer>
+      </main>
+    </div>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast-stack" class="toast-stack" role="status" aria-live="polite"></div>
+  <script type="module" src="/app/main.js"></script>
+</body>
+</html>

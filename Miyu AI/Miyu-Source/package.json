@@ -1,0 +1,23 @@
+{
+  "name": "miyu-companion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Miyu — an animated desktop companion with local-first privacy and optional model connections.",
+  "author": "Miyu Studio",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "build:portable": "node tools/build-portable.mjs",
+    "test": "node tests/functional.mjs",
+    "package:win": "node tools/build-portable.mjs && cd desktop && go run ./resourcegen && go build -trimpath -ldflags=\"-s -w -H windowsgui\" -o ../deliverables/Miyu.exe .",
+    "test:proxy": "cd desktop && go test -v ."
+  },
+  "dependencies": {
+    "lucide": "^0.468.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "vite": "^6.1.0"
+  }
+}

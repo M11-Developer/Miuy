@@ -1,0 +1,53 @@
+MIYU HOSHINO
+A little company. A little magic.
+
+1. Extract this ZIP before opening the app.
+2. Double-click Miyu.exe (Windows 10/11, 64-bit).
+3. Try Say hello, Head pat, a new scene, or the Focus room.
+
+No installation of the app is required. It needs Microsoft's Edge WebView2
+Runtime, normally present on Windows 10/11. If it is missing, use the
+included Miyu-Portable.html in a recent browser, or get WebView2 from:
+https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+
+The Windows executable is an unsigned personal prototype. Your computer
+may show an unknown-publisher warning. Only run software you trust.
+Source is included in Miyu-Source.zip for review. Windows runtime execution
+could not be tested in the Linux build workspace; the UI and model proxy
+were tested separately. See TESTING.md.
+
+STARTS IN OFFLINE PREVIEW
+Animations, voice reactions, rooms, ambience, focus tools, and memories
+work straight away. Preview chat uses prepared replies, not a real LLM.
+
+FOR REAL AI CHAT
+Open Settings & privacy -> AI connection.
+- Ollama: install Ollama, run a model, and connect its local server.
+- API: enter your compatible HTTPS endpoint, model, and your own API key.
+Read README.md for step-by-step instructions. No AI service is bundled.
+Your API provider may charge for requests. Keys last only for this session.
+
+YOUR CONTROLS
+M             Mute / unmute all sound
+C             Camera preview (asks first; never shared with AI)
+F             Focus room
+?             Keyboard shortcuts
+Esc           Leave a dialog, immersive view, or mini companion
+Window icon   Mini companion
+Pin icon      Stay on top of other windows (Windows app)
+
+Camera and microphone start off. Camera is local preview only, not AI vision.
+Dictation availability varies; its speech provider may process audio online.
+If dictation is unavailable, click the chat box and use Windows + H.
+
+Files included:
+Miyu.exe             Native Windows app
+Miyu-Portable.html   Self-contained browser fallback
+README.md            Full guide, privacy details, and model setup
+TESTING.md           What was verified and what was not
+Miyu-Source.zip      Editable source and prepared assets
+licenses/            Third-party licenses
+SHA256SUMS.txt       File checksums for integrity comparison
+
+This is a polished interactive prototype, not a finished commercial AAA game.
+Enjoy your little corner of the day.

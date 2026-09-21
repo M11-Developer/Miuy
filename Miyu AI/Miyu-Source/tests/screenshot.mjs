@@ -1,0 +1,11 @@
+import {chromium} from '@playwright/test';
+const browser=await chromium.launch({headless:true,args:['--no-sandbox','--enable-unsafe-swiftshader']});
+const page=await browser.newPage({viewport:{width:1512,height:982},deviceScaleFactor:1});
+page.on('console',m=>{if(m.type()==='error'||m.type()==='warning')console.log('Console',m.type(),m.text())});page.on('pageerror',e=>console.log('PAGE ERROR',e.message));
+await page.goto('http://127.0.0.1:5173');await page.waitForFunction(()=>window.miyuStatus?.().avatarReady,{timeout:30000});await page.waitForTimeout(1200);
+console.log(await page.evaluate(()=>({status:window.miyuStatus(),body:[document.body.scrollWidth,document.body.scrollHeight],viewport:[innerWidth,innerHeight],canvas:document.querySelector('canvas').getBoundingClientRect().toJSON()})));
+await page.screenshot({path:'tests/desktop.png',fullPage:true});
+await page.getByRole('button',{name:'Customize Miyu',exact:true}).click();await page.screenshot({path:'tests/personalize.png',fullPage:true});
+await page.getByRole('button',{name:'Close dialog',exact:true}).click();
+await page.setViewportSize({width:390,height:844});await page.screenshot({path:'tests/mobile.png',fullPage:true});
+await browser.close();
