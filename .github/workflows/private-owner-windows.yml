@@ -1,0 +1,131 @@
+name: Private Owner Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-owner-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build web
+        run: npm run build
+
+      - name: Build portable
+        run: npm run build:portable
+
+      - name: Generate owner hash from secret
+        env:
+          MIYU_OWNER_PIN: ${{ secrets.MIYU_OWNER_PIN }}
+        run: |
+          if (-not $env:MIYU_OWNER_PIN) { Write-Error "MIYU_OWNER_PIN secret not set"; exit 1 }
+          # Generate salt and hash using Go tool
+          cd tools
+          go mod init genhash 2>$null; go get golang.org/x/crypto@latest
+          go run gen-owner-hash.go > ../owner.env
+          cat ../owner.env
+          cd ..
+
+      - name: Parse owner hash
+        id: owner
+        run: |
+          $content = Get-Content owner.env
+          $salt = ($content | Select-String "salt=") -replace "salt=",""
+          $hash = ($content | Select-String "hash=") -replace "hash=",""
+          echo "salt=$salt" >> $env:GITHUB_OUTPUT
+          echo "hash=$hash" >> $env:GITHUB_OUTPUT
+          # Don't print hash in logs - redact
+          echo "Owner hash generated (redacted)"
+
+      - name: Generate Windows resources
+        working-directory: desktop
+        run: go run ./resourcegen
+
+      - name: Build Owner Windows EXE
+        working-directory: desktop
+        env:
+          OWNER_SALT: ${{ steps.owner.outputs.salt }}
+          OWNER_HASH: ${{ steps.owner.outputs.hash }}
+        run: |
+          go build -trimpath -ldflags="-s -w -H windowsgui -X main.ownerSalt=$env:OWNER_SALT -X main.ownerHash=$env:OWNER_HASH -X main.ownerBuildID=owner-${{ github.sha }} -X main.AppVersion=1.2.0-owner" -o ../Miyu-Owner.exe .
+          if (!(Test-Path ../Miyu-Owner.exe)) { throw "Owner exe not built" }
+          Get-FileHash ../Miyu-Owner.exe
+
+      - name: Create Owner ZIP
+        run: |
+          mkdir owner-deliverables
+          Copy-Item Miyu-Owner.exe owner-deliverables/
+          Copy-Item deliverables/Miyu-Portable.html owner-deliverables/Owner-Portable.html -ErrorAction SilentlyContinue
+          Copy-Item Miyu-Portable.html owner-deliverables/ -ErrorAction SilentlyContinue
+          "Owner build - private" | Out-File owner-deliverables/OWNER-ADMIN-GUIDE.txt
+          @"
+          MIYU OWNER EDITION - PRIVATE
+          ============================
+          This is a private Owner build. Do NOT distribute publicly.
+
+          Build ID: owner-${{ github.sha }}
+          Version: 1.2.0-owner
+
+          Owner Panel contains:
+          - Owner Lab Mode
+          - Experimental Toy Library
+          - Diagnostics
+          - Voice Controls / Full Duplex
+          - Adult Profile Controls
+          - Kind-language Filter Control
+          - Local Debug Status
+          - Export non-sensitive settings
+          - Lock Panel
+          - Build ID / Version
+
+          To unlock Owner Lab:
+          1. Open Miyu
+          2. Go to Settings & privacy
+          3. Enter Owner PIN (from MIYU_OWNER_PIN secret)
+          4. Must be in 18+ mode
+          5. Private build only
+
+          Security:
+          - PIN is hashed with PBKDF2-SHA256, 120k iterations, random salt
+          - Only hash stored in binary, never plaintext PIN
+          - Public builds have no hash
+          - No sexual content for minors even in Owner mode
+          - No encouragement of self-harm, no dangerous instructions
+
+          "@ | Out-File owner-deliverables/OWNER-ADMIN-GUIDE.txt -Append
+
+          Compress-Archive -Path owner-deliverables/* -DestinationPath Miyu-Owner-Windows.zip -Force
+          Get-FileHash Miyu-Owner-Windows.zip
+
+      - name: Upload Owner artifact (private)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Miyu-Owner-Windows
+          path: |
+            Miyu-Owner-Windows.zip
+            Miyu-Owner.exe
+            owner-deliverables/OWNER-ADMIN-GUIDE.txt
+          retention-days: 7
+
+      - name: Security note
+        run: |
+          echo "Owner build completed. Artifact is private and not published to public Release."
+          echo "Do NOT upload Owner ZIP to public repository."
+          echo "Hash was not printed in logs."

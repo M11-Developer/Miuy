@@ -1,0 +1,28 @@
+MIYU 1.0 — THIRD-PARTY NOTICES
+
+Original application code and local interaction design were generated for this project.
+Character and scenery imagery, and the studio voice recordings, are AI-generated.
+The user's supplied character reference is not claimed as an original drawing by this app.
+Verify reference/asset rights and applicable generation terms before commercial redistribution.
+
+Runtime / user-interface components:
+- Lucide icons — ISC license; Feather portions under MIT.
+- Manrope font — SIL Open Font License 1.1.
+- Lora font — SIL Open Font License 1.1.
+- go-webview2 — MIT license.
+- go-winloader — MIT license.
+- golang.org/x/sys — BSD-style Go license.
+- Go runtime and standard library — BSD-style Go license.
+- WebView2Loader.dll included by go-webview2 — Microsoft WebView2 SDK license.
+  The Edge WebView2 Runtime is NOT bundled; it is supplied separately by Microsoft.
+
+Build-time tools:
+- Vite, esbuild, Playwright — retained by their respective upstream licenses.
+- winres — MIT license; used to create the Windows resource section and icon.
+- Pillow, NumPy, OpenCV — optional offline artwork preparation tools; not bundled in the app.
+
+Full relevant runtime license texts are included in the licenses/ directory.
+Third-party components retain their original copyright and license notices.
+
+The application is a prototype provided as-is, without warranty.
+It is not a commercial AAA release, a 3D model, or a licensed Live2D rig.

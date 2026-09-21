@@ -1,0 +1,93 @@
+MIYU OWNER EDITION - ADMIN GUIDE (TEMPLATE)
+===========================================
+
+This file is a TEMPLATE for Owner Edition documentation.
+Real OWNER-ADMIN-GUIDE.txt is generated during private Owner build and contains build-specific info.
+It is NOT included in public releases and never contains raw PIN.
+
+SECURITY RULES (MUST FOLLOW):
+- Never put raw password in source, README, logs, public Release, Actions logs
+- Never print MIYU_OWNER_PIN secret in GitHub Actions logs
+- Use GitHub Actions Secret named MIYU_OWNER_PIN
+- Build-time PBKDF2-SHA256, 120k iterations, random 32-byte salt, 32-byte hash
+- Hash only stored in binary, never plaintext PIN
+- Public builds have no hash, Owner Panel disabled
+- Owner ZIP never uploaded to public repository
+- Owner ZIP artifact retention 7 days, private
+
+HOW OWNER BUILD WORKS:
+1. GitHub Actions workflow private-owner-windows.yml triggered manually (workflow_dispatch)
+2. Reads secret MIYU_OWNER_PIN from repository secrets
+3. tools/gen-owner-hash.go generates random salt and PBKDF2 hash
+4. Salt and hash injected via Go ldflags: -X main.ownerSalt=... -X main.ownerHash=...
+5. Build ID injected: owner-<git-sha>
+6. Binary built: Miyu-Owner.exe (Windows) or Miyu-Owner-Android.apk
+7. ZIP created: Miyu-Owner-Windows.zip containing exe, Owner-Portable.html, this guide
+8. Uploaded as private artifact, NOT as public Release
+9. Logs redact hash/salt (show [REDACTED])
+
+OWNER PANEL FEATURES:
+- Owner Lab Mode: Experimental features, toy library extended
+- Experimental Toy Library: Additional toys (puzzle, balloon, musical, etc.) plus custom sprite loader (local only)
+- Diagnostics: Local debug status, no secrets, export non-sensitive settings
+- Voice Controls: Volume, voice selection, duplex toggle
+- Full Duplex: Listen while speaking, mic stays open, text never auto-sent
+- Adult Profile Controls: Tune 18+ vocabulary, session length, but safety limits stay
+- Kind-language Filter Control: Can adjust filter strength for 18+, but strict for minors always
+- Local Debug Status: Version, Build ID, platform, memory, focus sessions, toy history
+- Export non-sensitive settings: JSON without API keys, no camera/mic data
+- Lock Panel: Lock Owner Panel, requires PIN again
+- Build ID / Version Information: Shown in About and Owner Panel
+
+OWNER LAB ACTIVATION (ALL must be true):
+- Correct PIN entered (verified via PBKDF2)
+- User in 18+ mode (age profile 18+)
+- Private build (IsOwnerBuild() == true)
+- Build config allows (ownerBuildID starts with "owner-")
+
+PUBLIC EDITION:
+- Owner Panel shows "Disabled in public build"
+- No hash, no salt
+- No active PIN
+- Cannot be upgraded to Owner via config file or localStorage trick
+- Verification via embedded hash, not via file that user can edit
+
+SAFETY LIMITS NEVER DISABLED (even in Owner):
+- No sexual content for minors
+- No encouragement of self-harm
+- No dangerous instructions (weapons, self-injury, etc.)
+- No illegal guidance
+- No surveillance, theft, reading other apps
+- No claiming Miyu is real human
+- Profanity filter for minors always strict
+- Respect Meter always active
+
+BUILD COMMANDS (local, for testing, don't commit PIN):
+
+# Generate hash locally (requires Go)
+MIYU_OWNER_PIN=mysecretpin go run ./tools/gen-owner-hash.go
+# Output: salt=... hash=...
+# Then build with ldflags:
+cd desktop
+go run ./resourcegen
+go build -trimpath -ldflags="-s -w -H windowsgui -X main.ownerSalt=<salt> -X main.ownerHash=<hash> -X main.ownerBuildID=owner-local -X main.AppVersion=1.2.0-owner" -o ../Miyu-Owner.exe .
+
+For Android Owner:
+cd mobile/android
+./gradlew assembleDebug -PownerBuild=true
+
+RELEASE PROCESS:
+- Public Windows: workflow public-windows-release.yml -> creates Release with Assets (Miyu.exe, ZIP, Portable, SHA256SUMS)
+- Public Linux: public-linux-release.yml -> AppImage, deb, SHA256SUMS
+- Public Android: public-android-release.yml -> APK, AAB, SHA256SUMS
+- Private Owner Windows: private-owner-windows.yml -> private artifact only
+- Private Owner Android: private-owner-android.yml -> private artifact only
+
+Do NOT:
+- Put Owner ZIP in public Release
+- Put PIN in README, logs, source
+- Use Owner secret in public workflow
+- Claim Release done if not in GitHub Releases with Assets
+
+Version: 1.2.0-owner
+Template generated: 2026-09-21

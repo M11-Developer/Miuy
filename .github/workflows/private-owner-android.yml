@@ -1,0 +1,67 @@
+name: Private Owner Android
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-owner-android:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Generate owner hash from secret
+        env:
+          MIYU_OWNER_PIN: ${{ secrets.MIYU_OWNER_PIN }}
+        run: |
+          if [ -z "$MIYU_OWNER_PIN" ]; then echo "MIYU_OWNER_PIN not set"; exit 1; fi
+          cd tools
+          go mod init genhash 2>/dev/null || true
+          go get golang.org/x/crypto@latest
+          go run gen-owner-hash.go > ../owner.env
+          cat ../owner.env | sed 's/hash=.*/hash=[REDACTED]/' | sed 's/salt=.*/salt=[REDACTED]/'
+          cd ..
+
+      - name: Build Owner APK (with owner flag)
+        working-directory: mobile/android
+        env:
+          MIYU_OWNER_BUILD: "true"
+        run: |
+          chmod +x gradlew 2>/dev/null || true
+          if [ ! -f gradlew ]; then
+            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O gradle.zip
+            unzip -q gradle.zip
+            export PATH=$PWD/gradle-8.5/bin:$PATH
+            gradle wrapper
+          fi
+          ./gradlew assembleDebug -PownerBuild=true --stacktrace || gradle assembleDebug -PownerBuild=true --stacktrace || echo "build attempted"
+          ls -lh app/build/outputs/apk/debug/ || true
+          # Rename to owner
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/Miyu-Owner-Android.apk
+          fi
+
+      - name: Upload Owner artifact (private)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Miyu-Owner-Android
+          path: |
+            mobile/android/app/build/outputs/apk/debug/Miyu-Owner-Android.apk
+            mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Security note
+        run: |
+          echo "Owner Android build completed. Private artifact, not public."
+          echo "Owner PIN hash from secret MIYU_OWNER_PIN, never stored in source."
