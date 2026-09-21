@@ -7,6 +7,7 @@ on:
       - 'mobile/android/**'
       - 'shared/**'
       - 'app/**'
+      - '.github/workflows/public-android-release.yml'
   workflow_dispatch:
 
 jobs:
@@ -36,29 +37,40 @@ jobs:
       - name: Install Android SDK manually if setup-android failed
         if: steps.android-sdk.outcome == 'failure'
         run: |
-          echo "Manual Android SDK install"
+          echo "Manual Android SDK install fallback"
           mkdir -p $HOME/android-sdk/cmdline-tools
           cd $HOME/android-sdk
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip || curl -L -o cmdline.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q cmdline.zip
-          mv cmdline-tools latest || true
           mkdir -p cmdline-tools/latest
+          mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
+          mv cmdline/* cmdline-tools/latest/ 2>/dev/null || true
           mv latest/* cmdline-tools/latest/ 2>/dev/null || true
+          ls -R cmdline-tools/latest | head -n 50
           export ANDROID_SDK_ROOT=$HOME/android-sdk
+          export ANDROID_HOME=$HOME/android-sdk
           export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
           yes | sdkmanager --licenses || true
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "$HOME/android-sdk/cmdline-tools/latest/bin:$HOME/android-sdk/platform-tools:$HOME/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
+
+      - name: Show Android SDK
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          which sdkmanager || echo "sdkmanager not in PATH"
+          sdkmanager --list_installed || true
+          ls -lh $HOME/android-sdk || true
 
       - name: Build Debug APK
         working-directory: mobile/android
-        continue-on-error: true
         run: |
-          chmod +x gradlew 2>/dev/null || echo "no gradlew"
+          chmod +x gradlew || echo "no gradlew, generating"
           if [ ! -f gradlew ]; then
-            echo "Generating gradle wrapper"
-            # Create minimal gradle wrapper properties
             mkdir -p gradle/wrapper
             cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
           distributionBase=GRADLE_USER_HOME
@@ -69,44 +81,51 @@ jobs:
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
           EOF
-            # Download gradle and generate wrapper
-            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip
+            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip || curl -L -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.5-bin.zip
             unzip -q /tmp/gradle.zip -d /tmp/
             /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5 || true
+            chmod +x gradlew
           fi
           ls -lh
-          ./gradlew assembleDebug --stacktrace || echo "Gradle build failed, will create placeholder"
+          ./gradlew assembleDebug --stacktrace --info 2>&1 | tee build.log
+          echo "=== BUILD LOG TAIL ==="
+          tail -n 200 build.log
           ls -lh app/build/outputs/apk/debug/ || true
 
       - name: Build Release AAB
         working-directory: mobile/android
         continue-on-error: true
         run: |
-          ./gradlew bundleRelease --stacktrace || echo "bundle build failed"
+          ./gradlew bundleRelease --stacktrace 2>&1 | tee bundle.log || echo "bundle build failed"
+          tail -n 100 bundle.log || true
           ls -lh app/build/outputs/bundle/release/ || true
 
-      - name: Create deliverables if build failed
+      - name: Create deliverables
+        if: always()
         run: |
-          mkdir -p mobile/android/app/build/outputs/apk/debug/
-          mkdir -p mobile/android/app/build/outputs/bundle/release/
           mkdir -p deliverables-android/
-          if [ ! -f mobile/android/app/build/outputs/apk/debug/app-debug.apk ]; then
-            echo "Android build requires full env, see README-Android.md" > mobile/android/app/build/outputs/apk/debug/README.txt
-            # Create placeholder APK as zip with manifest
-            echo "Placeholder APK - real build needs Android SDK" > deliverables-android/Miyu-Android-PLACEHOLDER.txt
-            cp README-Android.md deliverables-android/ 2>/dev/null || true
-          else
+          if [ -f mobile/android/app/build/outputs/apk/debug/app-debug.apk ]; then
             cp mobile/android/app/build/outputs/apk/debug/*.apk deliverables-android/ || true
+          fi
+          if [ -f mobile/android/app/build/outputs/bundle/release/app-release.aab ]; then
             cp mobile/android/app/build/outputs/bundle/release/*.aab deliverables-android/ || true
+          fi
+          # If no APK, create placeholder with instructions
+          if [ ! -f deliverables-android/app-debug.apk ] && [ ! -f deliverables-android/*.apk ]; then
+            echo "Android build failed - see README-Android.md for manual build" > deliverables-android/README-BUILD-FAILED.txt
+            echo "This placeholder is created when SDK/Gradle fails in CI. Real APK can be built locally with Android Studio." >> deliverables-android/README-BUILD-FAILED.txt
+            cat deliverables-android/README-BUILD-FAILED.txt
           fi
           ls -R deliverables-android/ || true
           ls -R mobile/android/app/build/outputs/ || true
 
       - name: SHA256
         run: |
-          find mobile/android/app/build/outputs deliverables-android -type f \( -name "*.apk" -o -name "*.aab" \) 2>/dev/null | xargs sha256sum > SHA256SUMS-Android.txt 2>/dev/null || echo "no apk/aab yet - placeholder" > SHA256SUMS-Android.txt
+          find deliverables-android mobile/android/app/build/outputs -type f \( -name "*.apk" -o -name "*.aab" \) 2>/dev/null | xargs sha256sum > SHA256SUMS-Android.txt 2>/dev/null || echo "no apk/aab yet - placeholder" > SHA256SUMS-Android.txt
           cat SHA256SUMS-Android.txt
-          sha256sum deliverables/Miyu-Portable.html >> SHA256SUMS-Android.txt || true
+          if [ -f deliverables/Miyu-Portable.html ]; then
+            sha256sum deliverables/Miyu-Portable.html >> SHA256SUMS-Android.txt || true
+          fi
           cat SHA256SUMS-Android.txt
 
       - name: Upload APK artifact
@@ -120,10 +139,11 @@ jobs:
             SHA256SUMS-Android.txt
             README-Android.md
             mobile/android/app/src/main/AndroidManifest.xml
+            mobile/android/app/build/outputs/apk/debug/build.log
           if-no-files-found: warn
 
       - name: Release
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+        if: success() || failure()
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -144,7 +164,9 @@ jobs:
             - APK for testing, AAB for Play Store
             - Built from ${{ github.sha }}
             - Security: No reading other apps, no keylogging, no surveillance, no auto-click
-            - Note: Overlay permission must be granted explicitly by user, never auto-enabled
-            - If APK not built (SDK issue), see artifact README and README-Android.md
+            - Overlay permission must be granted explicitly by user, never auto-enabled
+            - If APK not built, see artifact and README-Android.md for local build steps
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
