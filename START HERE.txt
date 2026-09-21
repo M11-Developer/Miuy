@@ -1,0 +1,99 @@
+MIYU HOSHINO
+A little company. A little magic.
+
+PRIMARY PRODUCT: Miyu.exe (Windows Native)
+FALLBACK: Miyu-Portable.html (Browser)
+
+WINDOWS 10/11, 64-bit:
+1. Extract Miyu-Windows.zip to a folder
+2. Double-click Miyu.exe
+3. Requires Microsoft Edge WebView2 Runtime (normally present)
+   If missing: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+4. Try Play Lab: "امسكي عربية لعبة" or "Hold a toy car"
+
+LINUX:
+- AppImage: chmod +x Miyu-Linux-x86_64.AppImage && ./Miyu-Linux-x86_64.AppImage
+- deb: sudo dpkg -i Miyu-Linux-x86_64.deb && miyu
+- Needs: libgtk-3-0, libwebkit2gtk-4.1-0
+- Wayland vs X11 differences in README-Linux.md
+
+ANDROID:
+- Install Miyu-Android.apk (enable unknown sources)
+- Grant overlay permission explicitly when asked (SYSTEM_ALERT_WINDOW)
+- Tap bubble to open controls, drag to move, resize, transparency, snap to edge, mini, hide
+- Foreground notification always shows with Stop button
+- No reading other apps, no keylogging, no surveillance
+- Play Lab: "امسكي عربية لعبة"
+- Open YouTube/Chrome via Intent only, no content control
+
+iOS:
+- No free bubble over all apps (iOS limitation)
+- Alternatives: PiP, Widgets, Live Activity, Dynamic Island, Siri, Share Sheet
+- Xcode project in mobile/ios/, needs macOS + signing for TestFlight
+- No fake IPA
+
+QUICK PLAY:
+- Say hello, Head pat, Cheer me up, Just breathe, Happy dance
+- Scenes: Sakura room, Moonlit garden, Dream studio
+- Focus room: 15/25/50 min
+- Memories: explicit save
+- Portrait export (no camera frames)
+- Support: Vodafone Cash 01027653109 (Copy only, no auto-transfer)
+
+PRIVACY:
+- Camera/mic OFF at startup, opt-in, local preview only
+- No analytics, no ads, no accounts
+- State: Windows DPAPI %LOCALAPPDATA%\Miyu\state.bin, Linux XDG_DATA_HOME/miyu/state.bin (0600 AES-GCM)
+- API keys session-only
+- Model proxy 127.0.0.1 only, token+origin check, HTTPS only for remote, no redirect
+
+AI CHAT:
+- Offline preview is scripted replies
+- For real AI:
+  - Ollama: install from ollama.com, run qwen3:4b, set endpoint http://localhost:11434
+  - OpenAI-compatible: enter HTTPS base URL, model, your API key, test greeting
+- Keys never stored
+
+SAFETY:
+- Age profiles: 3-5, 6-8, 9-12, 13-17, 18+
+- Parent/guardian confirmation
+- Respect meter, Mood system
+- Profanity filter, kind guidance
+- Local-only profile
+
+OWNER EDITION (Private):
+- Private build only, hash from MIYU_OWNER_PIN secret
+- PBKDF2 120k iterations, random salt
+- Public build has no hash, Owner Panel disabled
+- Owner Lab needs correct PIN + 18+ mode + private build
+- Safety limits never disabled (no sexual content for minors, no self-harm, etc.)
+- See OWNER-ADMIN-GUIDE.txt (private artifact, not public)
+
+BUILD FROM SOURCE:
+npm ci
+npm run dev
+npm run build
+npm run build:portable
+# Windows
+cd desktop
+go run ./resourcegen
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w -H windowsgui' -o ../Miyu.exe .
+# Linux
+go build -o ../Miyu-Linux-x86_64 .
+# Android
+cd mobile/android && ./gradlew assembleDebug
+
+TESTING:
+See TESTING.md for what was tested and what needs physical device.
+
+RELEASES:
+- Public Windows: Miyu-Windows.zip, Miyu.exe, Portable, README, SHA256SUMS
+- Public Linux: AppImage, deb, README-Linux, SHA256SUMS
+- Public Android: APK, AAB, README-Android
+- iOS: Xcode project, no fake IPA, TestFlight needs signing
+- Private Owner: Miyu-Owner-Windows.zip, Owner-Portable.html, OWNER-ADMIN-GUIDE (private artifact, NOT public Release)
+
+MERGE vs RELEASE:
+Merge is NOT Release. Release requires Assets (EXE, ZIP, AppImage, deb, APK, SHA256) in GitHub Releases.
+
+For full docs: README.md, README-Windows.md, README-Linux.md, README-Android.md, README-iOS.md

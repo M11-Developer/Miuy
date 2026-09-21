@@ -1,0 +1,134 @@
+name: Public Windows Release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'desktop/**'
+      - 'public/**'
+      - 'tools/**'
+      - 'package.json'
+      - 'index.html'
+      - 'vite.config.js'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: desktop/go.mod
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build web
+        run: npm run build
+
+      - name: Build portable
+        run: npm run build:portable
+
+      - name: Generate Windows resources
+        working-directory: desktop
+        run: go run ./resourcegen
+
+      - name: Build Windows EXE (public)
+        working-directory: desktop
+        run: |
+          go build -trimpath -ldflags="-s -w -H windowsgui -X main.ownerBuildID=public-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu.exe .
+          echo "Checking PE..."
+          file ../Miyu.exe || (Get-Content ../Miyu.exe -Encoding Byte -TotalCount 2 | ForEach-Object { Write-Host $_ })
+          if (!(Test-Path ../Miyu.exe)) { throw "Miyu.exe not found" }
+
+      - name: Create deliverables
+        run: |
+          mkdir -p deliverables
+          cp Miyu.exe deliverables/
+          cp -r dist deliverables/ 2>$null || true
+          $portable = Get-ChildItem -Path . -Filter "Miyu-Portable.html" -Recurse | Select-Object -First 1
+          if ($portable) { Copy-Item $portable.FullName deliverables/ }
+          else { Copy-Item "Miyu AI/Miyu-Portable.html" deliverables/ -ErrorAction SilentlyContinue }
+          # Also check root
+          if (Test-Path "./deliverables/Miyu-Portable.html") { Write-Host "portable exists" }
+          # List
+          Get-ChildItem deliverables/
+
+      - name: Build portable if not exists
+        run: |
+          if (!(Test-Path "deliverables/Miyu-Portable.html")) {
+            if (Test-Path "dist") {
+              node tools/build-portable.mjs
+              Copy-Item "deliverables/Miyu-Portable.html" "deliverables/" -ErrorAction SilentlyContinue
+              Copy-Item "Miyu-Portable.html" "deliverables/" -ErrorAction SilentlyContinue
+            }
+          }
+          Get-ChildItem -Recurse -Filter "*.html" | Select-Object FullName
+
+      - name: Create ZIP
+        run: |
+          Compress-Archive -Path deliverables/Miyu.exe,deliverables/Miyu-Portable.html -DestinationPath Miyu-Windows.zip -Force -ErrorAction SilentlyContinue
+          if (!(Test-Path Miyu-Windows.zip)) {
+            # fallback: zip everything in deliverables
+            Compress-Archive -Path deliverables/* -DestinationPath Miyu-Windows.zip -Force
+          }
+          Get-ChildItem *.zip
+
+      - name: SHA256
+        run: |
+          Get-FileHash Miyu.exe -Algorithm SHA256 | Format-List
+          Get-FileHash Miyu-Windows.zip -Algorithm SHA256 | Format-List
+          (Get-FileHash Miyu.exe -Algorithm SHA256).Hash + "  Miyu.exe" | Out-File SHA256SUMS.txt
+          (Get-FileHash Miyu-Windows.zip -Algorithm SHA256).Hash + "  Miyu-Windows.zip" | Out-File -Append SHA256SUMS.txt
+          if (Test-Path deliverables/Miyu-Portable.html) {
+            (Get-FileHash deliverables/Miyu-Portable.html -Algorithm SHA256).Hash + "  Miyu-Portable.html" | Out-File -Append SHA256SUMS.txt
+          }
+          cat SHA256SUMS.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Miyu-Windows
+          path: |
+            Miyu.exe
+            Miyu-Windows.zip
+            SHA256SUMS.txt
+            deliverables/Miyu-Portable.html
+            README.md
+            LICENSE
+
+      - name: Create GitHub Release (if tag or manual)
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            Miyu.exe
+            Miyu-Windows.zip
+            SHA256SUMS.txt
+            deliverables/Miyu-Portable.html
+          tag_name: v1.2.0-windows-${{ github.run_number }}
+          name: Miyu Windows Public v1.2.0
+          body: |
+            Public Windows Release
+            - Miyu.exe (WebView2, Go backend, embedded UI)
+            - Miyu-Portable.html fallback
+            - SHA256 checksums
+            - Built from ${{ github.sha }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
