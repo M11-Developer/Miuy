@@ -5,9 +5,8 @@ go 1.22
 require (
 	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
 	github.com/tc-hib/winres v0.3.1
-	github.com/webview/webview_go v0.0.0-20240506204753-434a02ceaaeb
-	golang.org/x/crypto v0.24.0
-	golang.org/x/sys v0.21.0
+	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
+	golang.org/x/sys v0.5.0
 )
 
 require (

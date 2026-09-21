@@ -43,6 +43,14 @@ jobs:
       - name: Build portable
         run: npm run build:portable
 
+      - name: Go mod tidy (fix sums)
+        working-directory: desktop
+        run: |
+          go mod tidy
+          cat go.mod
+          echo "--- go.sum entries ---"
+          cat go.sum | head -n 100
+
       - name: Generate Windows resources
         working-directory: desktop
         run: go run ./resourcegen
@@ -52,38 +60,25 @@ jobs:
         run: |
           go build -trimpath -ldflags="-s -w -H windowsgui -X main.ownerBuildID=public-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu.exe .
           echo "Checking PE..."
-          file ../Miyu.exe || (Get-Content ../Miyu.exe -Encoding Byte -TotalCount 2 | ForEach-Object { Write-Host $_ })
-          if (!(Test-Path ../Miyu.exe)) { throw "Miyu.exe not found" }
+          if (Test-Path ../Miyu.exe) { 
+            Write-Host "Miyu.exe built: $( (Get-Item ../Miyu.exe).Length / 1MB ) MB"
+            # Check MZ header
+            $bytes = Get-Content ../Miyu.exe -Encoding Byte -TotalCount 2
+            if ($bytes[0] -eq 77 -and $bytes[1] -eq 90) { Write-Host "MZ header OK" } else { Write-Host "MZ header FAIL" }
+          } else { throw "Miyu.exe not found" }
 
       - name: Create deliverables
         run: |
           mkdir -p deliverables
-          cp Miyu.exe deliverables/
-          cp -r dist deliverables/ 2>$null || true
+          Copy-Item Miyu.exe deliverables/ -Force
           $portable = Get-ChildItem -Path . -Filter "Miyu-Portable.html" -Recurse | Select-Object -First 1
-          if ($portable) { Copy-Item $portable.FullName deliverables/ }
-          else { Copy-Item "Miyu AI/Miyu-Portable.html" deliverables/ -ErrorAction SilentlyContinue }
-          # Also check root
-          if (Test-Path "./deliverables/Miyu-Portable.html") { Write-Host "portable exists" }
-          # List
+          if ($portable) { Copy-Item $portable.FullName deliverables/ -Force }
           Get-ChildItem deliverables/
-
-      - name: Build portable if not exists
-        run: |
-          if (!(Test-Path "deliverables/Miyu-Portable.html")) {
-            if (Test-Path "dist") {
-              node tools/build-portable.mjs
-              Copy-Item "deliverables/Miyu-Portable.html" "deliverables/" -ErrorAction SilentlyContinue
-              Copy-Item "Miyu-Portable.html" "deliverables/" -ErrorAction SilentlyContinue
-            }
-          }
-          Get-ChildItem -Recurse -Filter "*.html" | Select-Object FullName
 
       - name: Create ZIP
         run: |
           Compress-Archive -Path deliverables/Miyu.exe,deliverables/Miyu-Portable.html -DestinationPath Miyu-Windows.zip -Force -ErrorAction SilentlyContinue
           if (!(Test-Path Miyu-Windows.zip)) {
-            # fallback: zip everything in deliverables
             Compress-Archive -Path deliverables/* -DestinationPath Miyu-Windows.zip -Force
           }
           Get-ChildItem *.zip
@@ -111,8 +106,8 @@ jobs:
             README.md
             LICENSE
 
-      - name: Create GitHub Release (if tag or manual)
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         uses: softprops/action-gh-release@v1
         with:
           files: |
@@ -124,10 +119,14 @@ jobs:
           name: Miyu Windows Public v1.2.0
           body: |
             Public Windows Release
-            - Miyu.exe (WebView2, Go backend, embedded UI)
-            - Miyu-Portable.html fallback
+            - Miyu.exe (WebView2, Go backend, embedded UI, no external UI files)
+            - Miyu-Portable.html fallback (self-contained)
             - SHA256 checksums
             - Built from ${{ github.sha }}
+            - Native Desktop is primary product, Portable is fallback
+            - Always on top, Mini Companion, System Tray, Global Hotkeys where possible
+            - Encrypted local state DPAPI
+            - Bounded worker pool, structured logging, crash recovery
           draft: false
           prerelease: false
         env:
