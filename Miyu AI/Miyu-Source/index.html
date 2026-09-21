@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -17,6 +17,7 @@
       <nav aria-label="Main navigation">
         <button class="nav-item active" data-nav="companion" aria-label="Companion"><i data-lucide="house"></i><span>Companion</span><span class="nav-dot"></span></button>
         <button class="nav-item" data-nav="personalize" aria-label="Make it yours"><i data-lucide="palette"></i><span>Make it yours</span></button>
+        <button class="nav-item" data-nav="play" aria-label="Play lab"><i data-lucide="sparkles"></i><span>Play lab</span><span id="play-status-dot" class="nav-dot" hidden></span></button>
         <button class="nav-item" data-nav="focus" aria-label="Focus room"><i data-lucide="coffee"></i><span>Focus room</span></button>
         <button class="nav-item" data-nav="memories" aria-label="Little memories"><i data-lucide="book-heart"></i><span>Little memories</span><span id="memory-count" class="nav-count">0</span></button>
       </nav>
@@ -24,6 +25,7 @@
         <div class="note-orbit"><i data-lucide="flower-2"></i><span>✦</span></div>
         <p>Good company.<br>No special occasion.</p>
         <span>Come as you are.</span>
+        <button class="sidebar-support" data-action="support"><i data-lucide="heart-handshake"></i><span>Support Miyu</span></button>
       </div>
       <div class="sidebar-bottom">
         <button class="nav-item" data-nav="settings" aria-label="Settings and privacy"><i data-lucide="sliders-horizontal"></i><span>Settings & privacy</span></button>
@@ -36,6 +38,7 @@
       <header class="topbar">
         <div class="breadcrumb"><i data-lucide="sparkles"></i><span>Your space</span><span class="slash">/</span><strong id="page-label">Companion</strong></div>
         <div class="topbar-actions">
+          <button class="profile-pill" id="profile-pill" data-action="profile" title="Choose age and language"><span class="profile-emoji">✦</span><span id="profile-label">Choose age</span></button>
           <button class="connection-pill" id="connection-pill" data-action="connect"><span class="status-dot"></span><span id="connection-label">Offline preview</span><i data-lucide="chevron-down"></i></button>
           <span class="topbar-divider"></span>
           <button class="download-button" id="download-button" data-action="download"><i data-lucide="monitor-down"></i><span>Get desktop app</span></button>
@@ -83,6 +86,18 @@
               <button data-reaction="dance"><i data-lucide="music-2"></i><span>Happy dance</span></button>
             </div>
 
+            <section class="play-lab" id="play-lab" aria-label="Miyu play lab">
+              <div class="play-lab-heading"><div><div class="eyebrow"><span class="tiny-star">✦</span> MIYU PLAY LAB</div><h3>Imagine it. <em>Let’s play.</em></h3><p>Say “Hold a toy car” or type it in Arabic. The local toy maker animates a safe little prop.</p></div><span class="safety-badge" id="safety-badge">Safe play</span></div>
+              <div class="play-lab-grid">
+                <div class="toy-controls">
+                  <div class="profile-summary" id="profile-summary"><span class="profile-summary-icon">✦</span><div><strong id="profile-mode-label">Choose an age to begin</strong><small id="profile-language-label">Parent or child can set this</small></div><button class="button" data-action="profile">Set up</button></div><div class="respect-wrap"><div><span>Kindness meter</span><small id="respect-label">100% · gentle words make play happier</small></div><div class="respect-meter"><span id="respect-meter-fill"></span></div></div>
+                  <form id="toy-form" class="toy-form"><label for="toy-input">What should Miyu hold?</label><div class="toy-input-row"><input id="toy-input" maxlength="80" placeholder="مثال: امسكي عربية لعبة" aria-label="What should Miyu hold"><button class="button primary" type="submit"><i data-lucide="sparkles"></i>Make it</button></div><small>Free, offline toy animation — no image upload and no paid AI required.</small></form>
+                  <div class="toy-chips" aria-label="Toy ideas"><button type="button" data-toy="car">🚗 Toy car</button><button type="button" data-toy="ball">⚽ Ball</button><button type="button" data-toy="teddy">🧸 Teddy</button><button type="button" data-toy="book">📚 Story book</button></div>
+                </div>
+                <div class="toy-stage" id="toy-stage"><div class="toy-stage-stars">✦　✧　✦</div><div class="toy-placeholder" id="toy-placeholder"><span>🪄</span><strong>A little idea can become a game</strong><small>Your generated toy will appear here</small></div><div class="generated-toy" id="generated-toy" hidden><span id="toy-emoji">🚗</span><small id="toy-label">Toy car</small></div><div class="toy-action-label" id="toy-action-label">Waiting for a playful idea…</div></div>
+              </div>
+            </section>
+
             <div class="section-heading"><h3>Make this moment yours</h3><span>Little things, big difference.</span></div>
             <div class="moment-grid">
               <button class="moment-card scene-moment" data-action="scenes"><div class="moment-art" id="moment-art"></div><div><small>A CHANGE OF SCENERY</small><strong id="moment-scene-label">Somewhere cozy</strong><span>Find your favorite view <i data-lucide="arrow-up-right"></i></span></div></button>
@@ -102,7 +117,7 @@
             </div>
           </section>
         </div>
-        <footer class="page-footer"><span>Made for the everyday. <span class="footer-heart">♡</span></span><span><i data-lucide="leaf"></i>Your room. Your rhythm. Your Miyu.</span><button data-action="shortcuts">Keyboard shortcuts <kbd>?</kbd></button></footer>
+        <footer class="page-footer"><span>Made for the everyday. <span class="footer-heart">♡</span></span><span><i data-lucide="leaf"></i>Your room. Your rhythm. Your Miyu.</span><button data-action="support">Support the project</button><button data-action="shortcuts">Keyboard shortcuts <kbd>?</kbd></button></footer>
       </main>
     </div>
   </div>

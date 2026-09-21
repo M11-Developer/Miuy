@@ -18,8 +18,8 @@ export class MiyuAudio {
     if(this.prefs.muted||(!force&&!this.prefs.speakReplies))return;
     if(!('speechSynthesis' in window)){this.onError?.('Speech playback isn’t available here. Studio voice reactions still work.');return;}
     this.stopVoice();const utterance=new SpeechSynthesisUtterance(text.slice(0,2600));
-    const voices=speechSynthesis.getVoices();const voice=voices.find(v=>v.voiceURI===this.prefs.voice)||voices.find(v=>/en[-_]/i.test(v.lang)&&/female|samantha|aria|jenny|zira|natural/i.test(v.name))||voices.find(v=>v.lang.startsWith('en'));
-    if(voice)utterance.voice=voice;utterance.rate=.97;utterance.pitch=1.04;utterance.volume=this.prefs.volume/100;
+    const voices=speechSynthesis.getVoices();const wantsArabic=document.documentElement.lang==='ar';const voice=voices.find(v=>v.voiceURI===this.prefs.voice)||voices.find(v=>wantsArabic&&/^ar[-_]/i.test(v.lang))||voices.find(v=>!wantsArabic&&/en[-_]/i.test(v.lang)&&/female|samantha|aria|jenny|zira|natural/i.test(v.name))||voices.find(v=>wantsArabic?/^ar/i.test(v.lang):/^en/i.test(v.lang));
+    if(voice)utterance.voice=voice;utterance.lang=wantsArabic?'ar-SA':'en-US';utterance.rate=.97;utterance.pitch=1.04;utterance.volume=this.prefs.volume/100;
     utterance.onstart=()=>this.onSpeaking(true);utterance.onend=()=>this.onSpeaking(false);
     utterance.onerror=e=>{this.onSpeaking(false);if(!['interrupted','canceled'].includes(e.error))this.onError?.('Device speech is unavailable. Try another voice in Settings.');};
     speechSynthesis.speak(utterance);

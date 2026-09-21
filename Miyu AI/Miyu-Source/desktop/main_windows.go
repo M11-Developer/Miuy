@@ -57,7 +57,17 @@ func main() {
 		alert("Miyu could not create its local data folder.")
 		return
 	}
-	stateFile := filepath.Join(dataDir, "state.json")
+	stateFile := filepath.Join(dataDir, "state.bin")
+	vault := newSecureVault(stateFile)
+	logger := newEventLogger(filepath.Join(dataDir, "miyu.log"))
+	defer logger.Close()
+	defer modelWorkers.Close()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logger.Event("panic_recovered", map[string]any{"message": fmt.Sprint(recovered)})
+			alert("Miyu recovered from an internal error. Your encrypted local state was left intact. You can reopen the app and share miyu.log when reporting the issue.")
+		}
+	}()
 
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
@@ -74,7 +84,7 @@ func main() {
 	origin := "http://" + listener.Addr().String()
 	host := listener.Addr().String()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/chat", chatHandler(token, origin))
+	mux.HandleFunc("/api/chat", chatHandler(token, origin, logger))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" || r.Method != http.MethodGet {
 			http.NotFound(w, r)
@@ -130,17 +140,14 @@ func main() {
 	_ = w.Bind("miyuLoad", func() (string, error) {
 		dataMu.Lock()
 		defer dataMu.Unlock()
-		raw, err := os.ReadFile(stateFile)
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		if err != nil {
-			return "", errors.New("local data could not be read")
-		}
-		if len(raw) > 4*1024*1024 {
-			return "", errors.New("local state is too large")
-		}
-		return string(raw), nil
+			raw, err := vault.Read()
+			if err != nil {
+				return "", err
+			}
+			if len(raw) > 4*1024*1024 {
+				return "", errors.New("local state is too large")
+			}
+			return string(raw), nil
 	})
 	_ = w.Bind("miyuSave", func(data string) error {
 		if len(data) > 4*1024*1024 {
@@ -169,14 +176,21 @@ func main() {
 		}
 		dataMu.Lock()
 		defer dataMu.Unlock()
-		temporary := stateFile + ".tmp"
-		if err := os.WriteFile(temporary, encoded, 0600); err != nil {
-			return errors.New("local data could not be saved")
+		return vault.Write(encoded)
+	})
+	_ = w.Bind("miyuCheckForUpdates", func() (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		manifest, err := checkUpdateManifest(ctx, os.Getenv("MIYU_UPDATE_MANIFEST"), "1.1.0")
+		if err != nil {
+			logger.Event("update_error", map[string]any{"configured": os.Getenv("MIYU_UPDATE_MANIFEST") != ""})
+			return "", err
 		}
-		if err := os.Rename(temporary, stateFile); err != nil {
-			return errors.New("local data could not be replaced")
+		encoded, err := json.Marshal(manifest)
+		if err != nil {
+			return "", errors.New("update information could not be read")
 		}
-		return nil
+		return string(encoded), nil
 	})
 	_ = w.Bind("miyuWindow", func(action string, enabled bool) error {
 		switch strings.ToLower(action) {
