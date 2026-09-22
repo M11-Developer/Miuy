@@ -131,14 +131,21 @@ jobs:
 
       - name: JVM unit tests (Play Lab, age profiles, bubble safety defaults)
         working-directory: mobile/android
-        run: ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee unit-test.log
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee unit-test.log
 
       - name: Build debug APK, release APK and release AAB
         working-directory: mobile/android
         run: |
-          ./gradlew assembleDebug assembleRelease bundleRelease --stacktrace 2>&1 | tee build-android.log
+          set -o pipefail
+          # Run each task separately so a failure can never be swallowed by a pipe.
+          ./gradlew :app:assembleDebug --stacktrace --console=plain 2>&1 | tee build-android.log
+          ./gradlew :app:assembleRelease --stacktrace --console=plain 2>&1 | tee -a build-android.log
+          ./gradlew :app:bundleRelease --stacktrace --console=plain 2>&1 | tee -a build-android.log
           echo "=== outputs ==="
           find app/build/outputs -type f \( -name "*.apk" -o -name "*.aab" \) -printf '%p  %s bytes\n' | sort
+          ls -la app/build/outputs/ || echo "app/build/outputs does not exist"
 
       - name: Dump Kotlin/Gradle diagnostics if a build step failed
         if: failure()
@@ -247,6 +254,29 @@ jobs:
             [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS.txt
           done
           cat SHA256SUMS.txt
+
+      - name: Publish hashes, sizes and tag as annotations
+        if: always()
+        run: |
+          {
+            echo "release tag: v1.2.5-android-${GITHUB_RUN_NUMBER}"
+            echo
+            echo "--- deliverables ---"
+            ls -l deliverables-android 2>/dev/null || true
+            echo
+            cat deliverables-android/SHA256SUMS.txt 2>/dev/null || echo "no SHA256SUMS yet"
+            echo
+            echo "--- gradle wrapper present? ---"
+            ls -l mobile/android/gradlew mobile/android/gradle/wrapper/ 2>&1 || echo "wrapper missing"
+            echo
+            echo "--- build directories ---"
+            find mobile/android/app/build -maxdepth 3 -type d 2>/dev/null | head -20 || echo "no build directory"
+            echo
+            echo "--- gradle log tail ---"
+            tail -c 1200 mobile/android/build-android.log 2>/dev/null || echo "no gradle log"
+          } > /tmp/hashes.txt
+          ESC=$(sed 's/%/%25/g; s/\r//g' /tmp/hashes.txt | tr '\n' '\001' | sed 's/\001/%0A/g')
+          echo "::notice title=Android-1.2.5-assets::$ESC"
 
       - name: Compute release tag
         id: tag

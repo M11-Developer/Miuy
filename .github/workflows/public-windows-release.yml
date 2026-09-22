@@ -134,6 +134,18 @@ jobs:
           }
           Get-Content SHA256SUMS.txt
 
+      - name: Publish hashes and sizes as annotations
+        if: always()
+        shell: pwsh
+        run: |
+          $lines = @()
+          if (Test-Path SHA256SUMS.txt) { $lines += (Get-Content SHA256SUMS.txt) }
+          $lines += ""
+          $lines += (Get-Item Miyu.exe, Miyu-Windows.zip -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name)  $($_.Length) bytes" })
+          $content = ($lines -join "`n") -replace "%","%25" -replace "`r",""
+          $escaped = $content -replace "`n","%0A"
+          Write-Host "::notice title=Windows-1.2.5-assets::$escaped"
+
       - name: Compute release tag
         id: tag
         shell: bash
