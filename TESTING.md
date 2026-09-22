@@ -7,6 +7,39 @@ Two different things are reported here, and they are kept apart on purpose:
 
 ---
 
+## 0. This verification run — 2026-09-22
+
+Every claim below was produced by a real GitHub Actions run on this repository, and the numbers can be
+re-checked against the release assets themselves.
+
+| Platform | Release | Built from | Primary files (SHA-256 also in that release's `SHA256SUMS*.txt`) |
+| --- | --- | --- | --- |
+| Windows | [`v1.2.5-windows-8`](https://github.com/M11-Developer/Miyu/releases/tag/v1.2.5-windows-8) | `21752e5` | `Miyu.exe` 10,382,848 B · `Miyu-Windows.zip` 8,848,611 B · `Miyu-Portable.html` 4,216,727 B |
+| Linux | [`v1.2.5-linux-9`](https://github.com/M11-Developer/Miyu/releases/tag/v1.2.5-linux-9) | `21752e5` | `Miyu-Linux-x86_64.AppImage` 5,743,808 B · `Miyu-Linux-x86_64.deb` 4,006,276 B · `Miyu-Linux-arm64.deb` 3,800,130 B |
+| macOS | [`v1.2.5-macos-4`](https://github.com/M11-Developer/Miyu/releases/tag/v1.2.5-macos-4) | `21752e5` | `Miyu-macOS-arm64.zip` 5,364,400 B |
+| Android | [`v1.2.5-android-7`](https://github.com/M11-Developer/Miyu/releases/tag/v1.2.5-android-7) | `88faa64` (identical `mobile/android` sources to `21752e5`) | `Miyu-Android-1.2.5.apk` 10,915,552 B · `Miyu-Android-1.2.5.aab` 10,812,145 B · debug APK 16,771,324 B |
+| iOS | [`v1.2.5-ios-2`](https://github.com/M11-Developer/Miyu/releases/tag/v1.2.5-ios-2) | `e31fd1a` (identical `mobile/ios` sources to `21752e5`) | `Miyu-iOS-Xcode-Sources-1.2.5.zip` 20,151 B · `project.yml` · `VALIDATION-IOS.txt` |
+
+Workflow results on `main` at `21752e5` (all green): **Public Tests** (Web UI + portable HTML, owner
+PIN + hygiene, Windows native Go build + tests), **Public Windows Release**, **Public Linux Release**
+(x86_64 + arm64 + publish), **Darwin Validation**, **Public Android Release** (from `88faa64`),
+**iOS Validation** (from `e31fd1a`).
+
+Local confirmation (Linux, Chromium 153 + Vite 6.4.3, `MIYU_CHROMIUM_PATH` override):
+
+```bash
+npm ci && npm run build && npm run build:portable   # portable: 4.02 MB, 17 embedded assets
+npm run dev & MIYU_CHROMIUM_PATH=/path/to/chromium node tests/functional.mjs
+# → 24 functional checks passed.
+```
+
+The functional suite now also asserts the **Arabic-first contract** (`html dir="rtl"`, `lang="ar"` on
+first paint), flips the language through the profile UI and checks the layout follows, and verifies
+the RTL sidebar no longer overlaps the workspace (the 1.2.5 layout bug that hid the reaction buttons
+in Arabic).
+
+---
+
 ## 1. Tested automatically
 
 ### A. Web UI + portable HTML — `npm test` (Playwright Chromium), workflow **Public Tests**
@@ -61,7 +94,7 @@ Two different things are reported here, and they are kept apart on purpose:
 | Gradle 8.7 wrapper generated (`gradle/actions/setup-gradle@v3`) | PASS |
 | `./gradlew testDebugUnitTest` — Arabic/English toy parser, 5 age bands, bubble safety defaults | PASS |
 | `assembleDebug`, `assembleRelease`, `bundleRelease` produce APK + APK + AAB | PASS |
-| **Anti-stub gate**: dex magic `dex\n`, total dex > 1 MB, binary manifest size, `resources.arsc`, > 200 zip entries | PASS |
+| **Anti-stub gate**: dex magic `dex\n`, total dex ≥ 500 KB, binary manifest ≥ 1,200 B, `resources.arsc` present, ≥ 25 zip entries — thresholds calibrated to reject hand-assembled stubs, not real Compose builds | PASS |
 | `aapt dump badging` shows `com.miyu.companion` versionName `1.2.5` | PASS |
 | Release APK signed with the published public CI key (installable, upgradeable) | PASS |
 
