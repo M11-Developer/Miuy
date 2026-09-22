@@ -57,7 +57,7 @@ class FloatingBubbleView(
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var rootView: FrameLayout? = null
     private var composeView: ComposeView? = null
-    private var layoutParams: WindowManager.LayoutParams? = null
+    private var windowParams: WindowManager.LayoutParams? = null
     private var lifecycleOwner: BubbleLifecycleOwner? = null
     private var initialX = 0
     private var initialY = 0
@@ -97,7 +97,7 @@ class FloatingBubbleView(
             flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
 
-        layoutParams = WindowManager.LayoutParams(
+        windowParams = WindowManager.LayoutParams(
             (120 * position.size * metrics.density).toInt(),
             (120 * position.size * metrics.density).toInt(),
             type,
@@ -119,8 +119,8 @@ class FloatingBubbleView(
 
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        initialX = layoutParams!!.x
-                        initialY = layoutParams!!.y
+                        initialX = windowParams!!.x
+                        initialY = windowParams!!.y
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
                         isDragging = false
@@ -133,10 +133,10 @@ class FloatingBubbleView(
                             isDragging = true
                         }
                         if (isDragging) {
-                            layoutParams!!.x = initialX + dx.toInt()
-                            layoutParams!!.y = initialY + dy.toInt()
+                            windowParams!!.x = initialX + dx.toInt()
+                            windowParams!!.y = initialY + dy.toInt()
                             try {
-                                windowManager.updateViewLayout(this, layoutParams)
+                                windowManager.updateViewLayout(this, windowParams)
                             } catch (_: Exception) {
                             }
                         }
@@ -151,8 +151,8 @@ class FloatingBubbleView(
                             }
                             val metrics = context.resources.displayMetrics
                             val newPos = position.copy(
-                                x = layoutParams!!.x.toFloat() / metrics.widthPixels,
-                                y = layoutParams!!.y.toFloat() / metrics.heightPixels
+                                x = windowParams!!.x.toFloat() / metrics.widthPixels,
+                                y = windowParams!!.y.toFloat() / metrics.heightPixels
                             )
                             onPositionChanged(newPos)
                         }
@@ -188,7 +188,7 @@ class FloatingBubbleView(
         )
 
         try {
-            windowManager.addView(rootView, layoutParams)
+            windowManager.addView(rootView, windowParams)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -197,12 +197,12 @@ class FloatingBubbleView(
     private fun snapToEdge() {
         val metrics = context.resources.displayMetrics
         val screenWidth = metrics.widthPixels
-        val currentX = layoutParams!!.x
+        val currentX = windowParams!!.x
         val threshold = screenWidth * 0.3
 
         val targetX = when {
             currentX < threshold -> 0
-            currentX > screenWidth - threshold -> screenWidth - (layoutParams!!.width)
+            currentX > screenWidth - threshold -> screenWidth - (windowParams!!.width)
             else -> currentX
         }
 
@@ -210,9 +210,9 @@ class FloatingBubbleView(
             duration = 200
             interpolator = DecelerateInterpolator()
             addUpdateListener { anim ->
-                layoutParams!!.x = anim.animatedValue as Int
+                windowParams!!.x = anim.animatedValue as Int
                 try {
-                    rootView?.let { windowManager.updateViewLayout(it, layoutParams) }
+                    rootView?.let { windowManager.updateViewLayout(it, windowParams) }
                 } catch (_: Exception) {
                 }
             }
@@ -240,7 +240,7 @@ class FloatingBubbleView(
 
     fun updatePosition(newPos: FloatingPosition) {
         position = newPos
-        layoutParams?.let { params ->
+        windowParams?.let { params ->
             params.alpha = newPos.alpha
             val sizePx = (120 * newPos.size * context.resources.displayMetrics.density).toInt()
             params.width = sizePx

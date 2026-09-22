@@ -131,7 +131,7 @@ jobs:
 
       - name: JVM unit tests (Play Lab, age profiles, bubble safety defaults)
         working-directory: mobile/android
-        run: ./gradlew testDebugUnitTest --stacktrace
+        run: ./gradlew testDebugUnitTest --stacktrace 2>&1 | tee unit-test.log
 
       - name: Build debug APK, release APK and release AAB
         working-directory: mobile/android
@@ -139,6 +139,24 @@ jobs:
           ./gradlew assembleDebug assembleRelease bundleRelease --stacktrace 2>&1 | tee build-android.log
           echo "=== outputs ==="
           find app/build/outputs -type f \( -name "*.apk" -o -name "*.aab" \) -printf '%p  %s bytes\n' | sort
+
+      - name: Dump Kotlin/Gradle diagnostics if a build step failed
+        if: failure()
+        working-directory: mobile/android
+        run: |
+          {
+            echo "=== unit-test.log (tail) ==="
+            tail -c 2500 unit-test.log 2>/dev/null
+            echo
+            echo "=== build-android.log (tail) ==="
+            tail -c 2500 build-android.log 2>/dev/null
+            echo
+            echo "=== kotlin compile errors ==="
+            grep -h "^e: \|error: \|FAILURE:" unit-test.log build-android.log 2>/dev/null | head -40
+          } > /tmp/android-diag.txt || true
+          cat /tmp/android-diag.txt
+          TAIL=$(cat /tmp/android-diag.txt | sed 's/%/%25/g; s/\r//g' | tr '\n' '\001' | sed 's/\001/%0A/g')
+          echo "::error title=android-build-diagnostics::$TAIL"
 
       - name: Verify the APKs are real builds (anti-stub gate)
         run: |
