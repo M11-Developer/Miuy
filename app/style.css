@@ -83,3 +83,15 @@
 .sidebar{overflow-y:auto;overflow-x:hidden}
 .sidebar>*{flex-shrink:0}
 .nav-item{flex-shrink:0}
+
+/* --- RTL layout correctness (1.2.5) -------------------------------------------------------------
+   .sidebar is position:fixed but was only anchored with top/bottom. The app is Arabic-first, so
+   html[dir=rtl] is the default state, and in RTL a fixed element without left/right is placed at its
+   static position - the right edge. .workspace still reserved space with margin-left:216px, so the
+   sidebar ended up drawn on top of the right 216px of the app. Every click in that strip hit the
+   sidebar instead of the button underneath it (CI caught it on the "Say hello" reaction).
+   Anchor the sidebar to the inline start edge and reserve the same space on the workspace's start
+   side, for both writing directions. */
+.sidebar{left:0;right:auto}
+html[dir=rtl] .sidebar{left:auto;right:0;border-right:none;border-left:1px solid var(--line)}
+html[dir=rtl] .workspace{margin-left:0;margin-right:216px}
