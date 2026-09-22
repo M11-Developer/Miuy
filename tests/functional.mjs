@@ -1,6 +1,9 @@
 import {chromium, expect} from '@playwright/test';
 import fs from 'node:fs/promises';
-const browser=await chromium.launch({headless:true,args:['--no-sandbox','--enable-unsafe-swiftshader','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
+// CI installs the Playwright Chromium build. Local runs can point at any Chrome/Chromium binary
+// (MIYU_CHROMIUM_PATH), which is what makes it possible to reproduce this suite off GitHub runners.
+const localChrome=process.env.MIYU_CHROMIUM_PATH;
+const browser=await chromium.launch({headless:true,...(localChrome?{executablePath:localChrome}:{}),args:['--no-sandbox','--enable-unsafe-swiftshader','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
 const context=await browser.newContext({viewport:{width:1440,height:960},permissions:['camera','microphone'],acceptDownloads:true});
 const page=await context.newPage();
 const errors=[], network=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(!r.url().includes('127.0.0.1:5173')&&!r.url().startsWith('data:'))network.push(r.url())});
@@ -42,7 +45,10 @@ await page.locator('#ai-endpoint').fill('https://example.ai/v1');await page.loca
 const payloads=[];
 await page.route('https://example.ai/v1/chat/completions',async route=>{payloads.push({body:route.request().postDataJSON(),auth:route.request().headers().authorization});await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({choices:[{message:{content:'A friendly model reply. <script>window.compromised=true</script>'}}]})});});
 await page.locator('#test-connection').click();await expect(page.locator('#connection-result')).toContainText('Connected');expect(payloads[0].body.messages).toHaveLength(1);expect(payloads[0].auth).toBe('Bearer test-secret-not-persisted');await page.locator('[data-action="save-connection"]').click();pass('model test route sends only explicit test greeting');
-await page.locator('#chat-input').fill('A real test conversation');await page.locator('#chat-input').press('Enter');await expect(page.locator('.message-bubble').last()).toContainText('A friendly model reply');expect(payloads[1].body.messages[0].content).toContain('sage green');expect(await page.evaluate(()=>window.compromised)).toBeUndefined();await page.waitForTimeout(250);expect(await page.evaluate(()=>localStorage.getItem('miyu.companion.v1'))).not.toContain('test-secret-not-persisted');pass('connected chat uses memories; escapes model HTML; never stores API key');
+await page.locator('#chat-input').fill('A real test conversation');await page.locator('#chat-input').press('Enter');await expect(page.locator('.message-bubble').last()).toContainText('A friendly model reply');expect(payloads[1].body.messages[0].content).toContain('sage green');expect(await page.evaluate(()=>window.compromised)).toBeUndefined();await page.waitForTimeout(250);// The store key is versioned (v2 since 1.2.x; v1 is only read as a migration fallback), and an API
+// key must never reach disk - assert both, without tripping over a null store in a fresh profile.
+const storedState=await page.evaluate(()=>localStorage.getItem('miyu.companion.v2'));
+expect(storedState).toBeTruthy();expect(storedState).not.toContain('test-secret-not-persisted');expect(storedState).not.toContain('apiKey');pass('connected chat uses memories; escapes model HTML; never stores API key');
 await page.reload();await page.waitForFunction(()=>window.miyuStatus?.().avatarReady);expect(await page.evaluate(()=>window.miyuStatus().memories)).toBe(1);expect(await page.evaluate(()=>window.miyuStatus().cameraOn)).toBe(false);await page.locator('#connection-pill').click();await expect(page.locator('#ai-key')).toHaveValue('');await close();pass('reload persistence with key and media reset');
 await page.setViewportSize({width:390,height:844});await page.waitForTimeout(250);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:'tests/mobile-tested.png',fullPage:true});pass('390px mobile layout without horizontal overflow');
 expect(errors).toEqual([]);pass('no JavaScript runtime errors');
