@@ -256,10 +256,28 @@ fun MiyuApp(
                                 Text("وضع مصغر")
                             }
 
-                            var clickThrough by remember { mutableStateOf(false) }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = clickThrough, onCheckedChange = { clickThrough = it })
+                                Checkbox(
+                                    checked = floatingPos.clickThrough,
+                                    onCheckedChange = { checked ->
+                                        scope.launch {
+                                            prefs.savePosition(floatingPos.copy(clickThrough = checked))
+                                        }
+                                    }
+                                )
                                 Text("Click-through Mode (تمرير النقر)")
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = floatingPos.motionPaused,
+                                    onCheckedChange = { checked ->
+                                        scope.launch {
+                                            prefs.savePosition(floatingPos.copy(motionPaused = checked))
+                                        }
+                                    }
+                                )
+                                Text("إيقاف الحركة (Stop motion)")
                             }
                         }
                     }
@@ -366,6 +384,10 @@ fun MiyuApp(
                     LinearProgressIndicator(progress = { respect / 100f }, modifier = Modifier.fillMaxWidth())
                 }
             }
+
+            // Owner Edition: only rendered in private owner builds (public APKs have
+            // BuildConfig.MIYU_OWNER_BUILD == false, so this composable returns immediately).
+            OwnerPanelCard(isAdultProfile = (selectedAge ?: 0) >= 18)
 
             // App launcher (safe intents only)
             Card {

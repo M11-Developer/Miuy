@@ -1,5 +1,28 @@
 # Miyu Android — Floating Companion
 
+## Version 1.2.5 — how this build is produced
+
+`Miyu-Android-1.2.5.apk` is built from the Kotlin sources in `mobile/android/` by the
+**Public Android Release** workflow on a GitHub-hosted `ubuntu-latest` runner:
+
+- Kotlin **2.0.21** + the official Compose compiler plugin, AGP **8.5.2**, Gradle **8.7**
+- Android SDK: cmdline-tools `11076708`, `platform-tools`, `platforms;android-34`, `build-tools;34.0.0`
+- `com.miyu.companion`, `versionCode 15`, `versionName 1.2.5`, `minSdk 26`, `targetSdk 34`
+- The workflow refuses to publish if the APK fails its anti-stub gate (dex magic, total dex size,
+  manifest size, `resources.arsc`, entry count), so a placeholder APK can never reach a release.
+
+Signed with the public Miyu CI key (published as `Miyu-Android-certificate.pem` in the release), which
+is the same key for every public build, so new releases install over older ones.
+
+Install
+- `Miyu-Android-1.2.5.apk` — release build for phones (Android 8.0+)
+- `Miyu-Android-1.2.5.aab` — Play Store upload (Play re-signs it)
+- `Miyu-Android-1.2.5-debug.apk` — troubleshooting only
+
+Not yet verified on a physical device by CI — the overlay service, notification actions, Quick
+Settings tile and battery behaviour must be smoke-tested on your own phone (see `TESTING.md`).
+
+
 ## Installation
 
 - Miyu-Android.apk (test, sideload)

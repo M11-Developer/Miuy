@@ -1,0 +1,195 @@
+name: Darwin Validation (macOS build)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'desktop/**'
+      - 'app/**'
+      - 'index.html'
+      - 'package.json'
+      - '.github/workflows/darwin-validation.yml'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          uname -a
+          xcodebuild -version || true
+          sw_vers || true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: desktop/go.mod
+
+      - name: npm ci and build UI
+        run: |
+          npm ci
+          npm run build
+          npm run build:portable
+
+      - name: Go mod tidy
+        working-directory: desktop
+        run: go mod tidy -v
+
+      - name: Build Miyu-macOS (Cocoa + WebKit, cgo)
+        working-directory: desktop
+        run: |
+          export CGO_ENABLED=1
+          go build -trimpath -ldflags="-s -w -X main.AppVersion=1.2.5 -X main.BuildChannel=public -X main.ownerBuildID=public-macos-${{ github.sha }}" -o ../Miyu-macOS . 2>&1 | tee build-macos.log
+          tail -n 40 build-macos.log
+          file ../Miyu-macOS
+          ls -lh ../Miyu-macOS
+
+      - name: Go tests (proxy bridge)
+        working-directory: desktop
+        run: go test -v ./...
+
+      - name: Package a real .app bundle
+        run: |
+          ARCH=$(uname -m)
+          APP="Miyu.app"
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp Miyu-macOS "$APP/Contents/MacOS/Miyu"
+          chmod +x "$APP/Contents/MacOS/Miyu"
+          cp public/assets/icon.png "$APP/Contents/Resources/miyu.png" 2>/dev/null || true
+          cat > "$APP/Contents/Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Miyu</string>
+            <key>CFBundleDisplayName</key><string>Miyu</string>
+            <key>CFBundleIdentifier</key><string>app.miyu.companion</string>
+            <key>CFBundleVersion</key><string>1.2.5</string>
+            <key>CFBundleShortVersionString</key><string>1.2.5</string>
+            <key>CFBundleExecutable</key><string>Miyu</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSMicrophoneUsageDescription</key><string>Miyu only uses the microphone when you press the microphone button.</string>
+            <key>NSCameraUsageDescription</key><string>Miyu only uses the camera when you press the camera button.</string>
+          </dict>
+          </plist>
+          EOF
+          codesign --force --deep --sign - "$APP" || echo "ad-hoc signing not available, leaving the bundle unsigned"
+          codesign -dv "$APP" 2>&1 | head -5 || true
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "Miyu-macOS-${ARCH}.zip"
+          cp Miyu-macOS "Miyu-macOS-${ARCH}"
+          ls -lh Miyu-macOS-* "$APP/Contents/MacOS/Miyu"
+
+      - name: Verification report
+        run: |
+          ARCH=$(uname -m)
+          {
+            echo "Miyu macOS verification report (public build)"
+            echo "architecture : $ARCH"
+            echo "commit       : ${{ github.sha }}"
+            echo "version      : 1.2.5"
+            echo "--- raw binary ---"
+            file "Miyu-macOS-${ARCH}"
+            ls -l "Miyu-macOS-${ARCH}"
+            echo "--- app bundle ---"
+            find Miyu.app -maxdepth 3 | head -20
+            echo "--- signature ---"
+            codesign -dv Miyu.app 2>&1 | head -5 || echo "unsigned (ad-hoc signing unavailable)"
+            echo "--- tests ---"
+            echo "go test ./... executed in the desktop module (see workflow log)"
+          } > VERIFICATION-macOS.txt
+          cat VERIFICATION-macOS.txt
+
+      - name: SHA256
+        run: |
+          ARCH=$(uname -m)
+          cp README.md README-macOS.md 2>/dev/null || true
+          cat > README-macOS.md <<'EOF'
+          # Miyu for macOS (public build 1.2.5)
+
+          Install
+          1. Download Miyu-macOS-<arch>.zip and unzip it.
+          2. Move Miyu.app to /Applications (optional).
+          3. First launch: right-click the app and choose Open, because the build is ad-hoc signed
+             (no Apple Developer certificate is used for public CI builds).
+          4. macOS Gatekeeper may ask for confirmation - that is macOS protecting you, decide yourself.
+
+          Runtime requirements: macOS 11 or newer. The app is a native Cocoa + WebKit shell around the
+          same Go backend used on Windows and Linux: loopback bridge with session token, Host validation,
+          AES-GCM local state, structured logs, bounded model worker pool.
+
+          The public build has no owner PIN hash, so the Owner Panel is disabled by design.
+          EOF
+          sha256sum "Miyu-macOS-${ARCH}" "Miyu-macOS-${ARCH}.zip" deliverables/Miyu-Portable.html > SHA256SUMS-macOS.txt
+          cat SHA256SUMS-macOS.txt
+
+      - name: Compute release tag
+        id: tag
+        run: |
+          BASE="v1.2.5-macos-${GITHUB_RUN_NUMBER}"
+          TAG="$BASE"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "refs/tags/$TAG"; then
+            TAG="$BASE-${GITHUB_RUN_ATTEMPT}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Miyu-macOS
+          path: |
+            Miyu-macOS-*
+            Miyu-macOS-*.zip
+            SHA256SUMS-macOS.txt
+            VERIFICATION-macOS.txt
+            README-macOS.md
+            deliverables/Miyu-Portable.html
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release v1.2.5 (macOS)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Miyu macOS Public v1.2.5 (${{ steps.tag.outputs.tag }})
+          fail_on_unmatched_files: true
+          files: |
+            Miyu-macOS-*
+            Miyu-macOS-*.zip
+            SHA256SUMS-macOS.txt
+            VERIFICATION-macOS.txt
+            README-macOS.md
+            deliverables/Miyu-Portable.html
+          body: |
+            ## Miyu for macOS — v1.2.5 (native Cocoa + WebKit build)
+
+            Built on a GitHub-hosted `macos-latest` runner from commit `${{ github.sha }}`.
+
+            | File | What it is |
+            | --- | --- |
+            | `Miyu-macOS-arm64.zip` | **Install this.** `Miyu.app` bundle, ad-hoc signed (right-click → Open on first launch). |
+            | `Miyu-macOS-<arch>` | The raw native executable, for scripting or inspection. |
+            | `Miyu-Portable.html` | Browser fallback, not the native app. |
+            | `VERIFICATION-macOS.txt` | `file` output, bundle layout, signature details. |
+            | `SHA256SUMS-macOS.txt` | SHA-256 for every file above. |
+
+            The macOS port shares the Windows/Linux backend: loopback bridge with a per-session token
+            and Host validation, AES-GCM encrypted local state in `~/Library/Application Support/Miyu`,
+            structured logs, bounded worker pool, crash recovery. macOS always-on-top behaviour is
+            best-effort and reported honestly by the app instead of being claimed silently.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

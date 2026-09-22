@@ -1,4 +1,7 @@
-//go:build linux
+//go:build darwin
+
+// Miyu macOS native shell (Cocoa + WebKit through webview_go).
+// Same local HTTP bridge, same encrypted vault, same owner panel rules as Windows/Linux.
 
 package main
 
@@ -26,9 +29,9 @@ var ui []byte
 var dataMu sync.Mutex
 
 func main() {
-	configRoot, err := getLinuxDataDir()
+	configRoot, err := getDarwinDataDir()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Miyu could not find data dir")
+		fmt.Fprintln(os.Stderr, "Miyu could not find its Application Support folder")
 		return
 	}
 	if err := os.MkdirAll(configRoot, 0700); err != nil {
@@ -101,7 +104,7 @@ func main() {
 	// Webview window
 	w := webview.New(false)
 	if w == nil {
-		fmt.Fprintln(os.Stderr, "Failed to create webview. Need GTK and WebKitGTK.")
+		fmt.Fprintln(os.Stderr, "Failed to create webview. Miyu needs the macOS Cocoa/WebKit frameworks (they ship with macOS).")
 		return
 	}
 	defer w.Destroy()
@@ -110,7 +113,7 @@ func main() {
 	w.SetSize(380, 520, webview.HintMin)
 
 	jsToken, _ := json.Marshal(token)
-	w.Init("window.__MIYU_DESKTOP__=true;window.__MIYU_LINUX__=true;window.__MIYU_API_TOKEN__=" + string(jsToken) + ";")
+	w.Init("window.__MIYU_DESKTOP__=true;window.__MIYU_MACOS__=true;window.__MIYU_API_TOKEN__=" + string(jsToken) + ";")
 	w.Init(fmt.Sprintf("window.__MIYU_OWNER_BUILD__=%v;window.__MIYU_VERSION__=%q;", IsOwnerBuild(), AppVersion))
 
 	_ = w.Bind("miyuLoad", func() (string, error) {
@@ -165,8 +168,9 @@ func main() {
 		return string(encoded), nil
 	})
 	_ = w.Bind("miyuWindow", func(action string, enabled bool) error {
-		// On Linux, always-on-top is window manager dependent. We try via JS or ignore gracefully.
-		// For now, log and return nil; UI will handle fallback.
+		// macOS always-on-top / mini companion positioning is handled by the UI layer and
+		// logged here. webview_go does not expose NSWindow level changes, so the app degrades
+		// gracefully instead of claiming a capability it does not have on this build.
 		logger.Event("window_action", map[string]any{"action": action, "enabled": enabled})
 		return nil
 	})

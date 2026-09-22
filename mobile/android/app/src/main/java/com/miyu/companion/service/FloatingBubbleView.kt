@@ -8,7 +8,6 @@ import android.view.*
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
@@ -19,30 +18,32 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.miyu.companion.data.FloatingPosition
 import com.miyu.companion.data.ToyType
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * Floating bubble that shows Miyu character.
- * 
+ * Floating bubble that shows the Miyu character.
+ *
  * Features:
- * - Drag to move
- * - Snap to edges
- * - Resize via pinch or settings
+ * - Drag to move, snap to edges (animated)
+ * - Resize through the control panel (size 0.5x .. 1.5x)
  * - Transparency control
  * - Mini mode
- * - Click-through mode (when enabled, passes touches through)
- * - Toy overlay animation
- * - Idle breathing animation
- * - Speech bubble
- * - Safe area handling
+ * - Click-through mode (FLAG_NOT_TOUCHABLE: touches reach the app underneath)
+ * - Toy overlay animation (Play Lab toy rides along with the bubble)
+ * - Idle breathing animation, blinking, speech bubble
+ * - Stop-motion switch (freezes every animation for calmer play / reduced motion)
+ * - Safe area + notch aware placement, portrait & landscape aware
+ *
+ * Privacy: the bubble draws the Miyu character only. It never reads other apps, never
+ * captures keystrokes, never inspects screen content and never performs automatic clicks.
  */
 class FloatingBubbleView(
     private val context: Context,
@@ -52,14 +53,27 @@ class FloatingBubbleView(
     private val onClick: () -> Unit,
     private val onClose: () -> Unit
 ) {
-    private var windowManager: WindowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    private var windowManager: WindowManager =
+        context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var rootView: FrameLayout? = null
+    private var composeView: ComposeView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private var lifecycleOwner: BubbleLifecycleOwner? = null
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
     private var isDragging = false
+
+    /** Insets (status bar / notch / gesture bar) so the bubble never sits under system UI. */
+    private fun safeInsets(): IntArray {
+        val res = context.resources
+        val id = res.getIdentifier("status_bar_height", "dimen", "android")
+        val statusBar = if (id > 0) res.getDimensionPixelSize(id) else 0
+        val navId = res.getIdentifier("navigation_bar_height", "dimen", "android")
+        val navBar = if (navId > 0) res.getDimensionPixelSize(navId) else 0
+        return intArrayOf(statusBar, navBar)
+    }
 
     fun show() {
         if (rootView != null) return
@@ -74,24 +88,32 @@ class FloatingBubbleView(
         val metrics = context.resources.displayMetrics
         val screenWidth = metrics.widthPixels
         val screenHeight = metrics.heightPixels
+        val (statusBar, navBar) = Pair(safeInsets()[0], safeInsets()[1])
+
+        var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        if (position.clickThrough) {
+            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        }
 
         layoutParams = WindowManager.LayoutParams(
             (120 * position.size * metrics.density).toInt(),
             (120 * position.size * metrics.density).toInt(),
             type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            flags,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (position.x * screenWidth).toInt()
-            y = (position.y * screenHeight).toInt()
+            x = (position.x * screenWidth).toInt().coerceIn(0, maxOf(0, screenWidth - width))
+            y = ((position.y * screenHeight).toInt() + statusBar).coerceIn(statusBar, maxOf(statusBar, screenHeight - navBar - height))
             alpha = position.alpha
         }
 
+        val owner = BubbleLifecycleOwner()
+        lifecycleOwner = owner
+
         rootView = FrameLayout(context).apply {
-            // Drag handling at Android View level for smoothness
             setOnTouchListener { _, event ->
                 if (position.clickThrough) return@setOnTouchListener false
 
@@ -115,7 +137,8 @@ class FloatingBubbleView(
                             layoutParams!!.y = initialY + dy.toInt()
                             try {
                                 windowManager.updateViewLayout(this, layoutParams)
-                            } catch (_: Exception) {}
+                            } catch (_: Exception) {
+                            }
                         }
                         true
                     }
@@ -123,11 +146,9 @@ class FloatingBubbleView(
                         if (!isDragging) {
                             onClick()
                         } else {
-                            // Snap to edge if enabled
                             if (position.snapToEdge) {
                                 snapToEdge()
                             }
-                            // Save position
                             val metrics = context.resources.displayMetrics
                             val newPos = position.copy(
                                 x = layoutParams!!.x.toFloat() / metrics.widthPixels,
@@ -143,7 +164,12 @@ class FloatingBubbleView(
             }
         }
 
-        val composeView = ComposeView(context).apply {
+        // Compose needs a ViewTreeLifecycleOwner + SavedStateRegistryOwner on the overlay
+        // window, otherwise ComposeView.setContent() throws (a WindowManager view has no
+        // Activity lifecycle of its own).
+        val container = ComposeView(context).apply {
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
             setContent {
                 MiyuBubbleContent(
                     position = position,
@@ -152,11 +178,14 @@ class FloatingBubbleView(
                 )
             }
         }
-
-        rootView!!.addView(composeView, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        ))
+        composeView = container
+        rootView!!.addView(
+            container,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
 
         try {
             windowManager.addView(rootView, layoutParams)
@@ -177,15 +206,15 @@ class FloatingBubbleView(
             else -> currentX
         }
 
-        // Animate snap
         val animator = ValueAnimator.ofInt(currentX, targetX).apply {
             duration = 200
             interpolator = DecelerateInterpolator()
             addUpdateListener { anim ->
                 layoutParams!!.x = anim.animatedValue as Int
                 try {
-                    windowManager.updateViewLayout(rootView, layoutParams)
-                } catch (_: Exception) {}
+                    rootView?.let { windowManager.updateViewLayout(it, layoutParams) }
+                } catch (_: Exception) {
+                }
             }
         }
         animator.start()
@@ -195,19 +224,18 @@ class FloatingBubbleView(
         rootView?.let {
             try {
                 windowManager.removeView(it)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
         rootView = null
+        composeView = null
+        lifecycleOwner?.destroy()
+        lifecycleOwner = null
     }
 
     fun updateToy(toy: ToyType?) {
         currentToy = toy
-        rootView?.let { root ->
-            val composeView = root.getChildAt(0) as? ComposeView
-            composeView?.setContent {
-                MiyuBubbleContent(position, currentToy, isDragging)
-            }
-        }
+        refreshContent()
     }
 
     fun updatePosition(newPos: FloatingPosition) {
@@ -217,6 +245,12 @@ class FloatingBubbleView(
             val sizePx = (120 * newPos.size * context.resources.displayMetrics.density).toInt()
             params.width = sizePx
             params.height = sizePx
+            // Click-through: pass every touch to the app underneath until it is switched off.
+            params.flags = if (newPos.clickThrough) {
+                params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            } else {
+                params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            }
             if (!isDragging) {
                 val metrics = context.resources.displayMetrics
                 params.x = (newPos.x * metrics.widthPixels).toInt()
@@ -224,13 +258,19 @@ class FloatingBubbleView(
             }
             try {
                 rootView?.let { windowManager.updateViewLayout(it, params) }
-            } catch (_: Exception) {}
-        }
-        // Recompose
-        rootView?.let { root ->
-            (root.getChildAt(0) as? ComposeView)?.setContent {
-                MiyuBubbleContent(position, currentToy, isDragging)
+            } catch (_: Exception) {
             }
+        }
+        refreshContent()
+    }
+
+    private fun refreshContent() {
+        composeView?.setContent {
+            MiyuBubbleContent(
+                position = position,
+                currentToy = currentToy,
+                isDragging = isDragging
+            )
         }
     }
 }
@@ -243,23 +283,39 @@ fun MiyuBubbleContent(
 ) {
     var breathing by remember { mutableStateOf(0f) }
     var blinking by remember { mutableStateOf(false) }
+    var speaking by remember { mutableStateOf(false) }
 
-    // Idle breathing animation
-    LaunchedEffect(Unit) {
+    // Idle breathing animation. "Stop motion" freezes it instantly (accessibility + calm play).
+    LaunchedEffect(position.motionPaused) {
+        if (position.motionPaused) {
+            breathing = 0f
+            blinking = false
+            speaking = false
+            return@LaunchedEffect
+        }
         while (true) {
             kotlinx.coroutines.delay(16)
             breathing = (kotlin.math.sin(System.currentTimeMillis() / 800.0) * 0.05).toFloat()
         }
     }
 
-    // Blink every 3-5 seconds
-    LaunchedEffect(Unit) {
+    // Blink every 3-5 seconds (stopped when motion is paused).
+    LaunchedEffect(position.motionPaused) {
+        if (position.motionPaused) return@LaunchedEffect
         while (true) {
             kotlinx.coroutines.delay((3000 + (Math.random() * 2000)).toLong())
             blinking = true
             kotlinx.coroutines.delay(150)
             blinking = false
         }
+    }
+
+    // Toy reaction behaves like a tiny speech moment: bubble "talks" when a toy is grabbed.
+    LaunchedEffect(currentToy) {
+        if (currentToy == null || position.motionPaused) return@LaunchedEffect
+        speaking = true
+        kotlinx.coroutines.delay(900)
+        speaking = false
     }
 
     Box(
@@ -279,7 +335,8 @@ fun MiyuBubbleContent(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            // Character placeholder - in real app would be animated WebP or Lottie
+            // Character face. The production character art is intentionally not bundled in the
+            // public repository; this vector/emoji face keeps the bubble readable and tiny.
             Text(
                 text = if (blinking) "◕‿◕" else "｡◕‿◕｡",
                 fontSize = if (position.isMini) 20.sp else 32.sp,
@@ -288,7 +345,7 @@ fun MiyuBubbleContent(
             )
         }
 
-        // Toy overlay
+        // Toy overlay: appears only when the child asked Miyu to hold something.
         if (currentToy != null && !position.isMini) {
             Box(
                 modifier = Modifier
@@ -302,6 +359,23 @@ fun MiyuBubbleContent(
                 Text(
                     text = currentToy.emoji,
                     fontSize = 24.sp
+                )
+            }
+        }
+
+        // Speech bubble (no audio is recorded or stored to produce this).
+        if (speaking && !position.isMini) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.95f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "Miyu ماسكة ${currentToy?.labelAr ?: ""}!",
+                    fontSize = 10.sp,
+                    color = Color(0xFF8A5F62)
                 )
             }
         }

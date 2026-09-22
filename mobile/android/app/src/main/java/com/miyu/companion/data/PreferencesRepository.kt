@@ -20,6 +20,8 @@ class PreferencesRepository(private val context: Context) {
         val OVERLAY_SNAP = booleanPreferencesKey("overlay_snap")
         val OVERLAY_MINI = booleanPreferencesKey("overlay_mini")
         val OVERLAY_ENABLED = booleanPreferencesKey("overlay_enabled")
+        val OVERLAY_CLICK_THROUGH = booleanPreferencesKey("overlay_click_through")
+        val OVERLAY_MOTION_PAUSED = booleanPreferencesKey("overlay_motion_paused")
         val RESPECT_METER = intPreferencesKey("respect")
         val CURRENT_TOY = stringPreferencesKey("current_toy")
         val FOCUS_MINUTES = intPreferencesKey("focus_minutes")
@@ -46,7 +48,9 @@ class PreferencesRepository(private val context: Context) {
             alpha = prefs[OVERLAY_ALPHA] ?: 1f,
             snapToEdge = prefs[OVERLAY_SNAP] ?: true,
             isMini = prefs[OVERLAY_MINI] ?: false,
-            isHidden = false
+            isHidden = false,
+            clickThrough = prefs[OVERLAY_CLICK_THROUGH] ?: false,
+            motionPaused = prefs[OVERLAY_MOTION_PAUSED] ?: false
         )
     }
 
@@ -58,6 +62,8 @@ class PreferencesRepository(private val context: Context) {
             prefs[OVERLAY_ALPHA] = pos.alpha
             prefs[OVERLAY_SNAP] = pos.snapToEdge
             prefs[OVERLAY_MINI] = pos.isMini
+            prefs[OVERLAY_CLICK_THROUGH] = pos.clickThrough
+            prefs[OVERLAY_MOTION_PAUSED] = pos.motionPaused
         }
     }
 

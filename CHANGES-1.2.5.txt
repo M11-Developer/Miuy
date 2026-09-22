@@ -1,0 +1,44 @@
+MIYU 1.2.5 — CHANGELOG
+======================
+
+REPO / BUILD
+- Version bumped to 1.2.5 in: package.json, desktop/version.go, desktop/owner.go,
+  desktop/resourcegen/main.go, mobile/android/app/build.gradle.kts (versionCode 15),
+  and every release workflow tag (v1.2.5-windows-*, v1.2.5-linux-*, v1.2.5-android-*,
+  v1.2.5-macos-*, v1.2.5-ios-*).
+- New/updated workflows: Public Windows Release, Public Linux Release, Public Android Release,
+  iOS Validation, Darwin Validation, Private Owner Windows, Private Owner Android, Public Tests.
+
+ANDROID (fixed + completed)
+- Fixed the Compose Gradle plugin version trap: "org.jetbrains.kotlin.plugin.compose 1.9.22"
+  does not exist. Now Kotlin 2.0.21 + AGP 8.5.2 + Gradle 8.7 (lock-step).
+- Added missing gradle.properties (android.useAndroidX, JVM memory, caching).
+- Added launcher icons: adaptive + monochrome vectors and PNG mipmaps (mdpi..xxxhdpi).
+- Removed kotlinx.serialization annotations that had no plugin configured.
+- Bubble now receives a BubbleLifecycleOwner, so ComposeView.setContent() works on a
+  WindowManager overlay window (would have crashed at runtime before).
+- Click-through mode now really applies FLAG_NOT_TOUCHABLE.
+- Added "stop motion" switch that freezes breathing / blinking / toy animation, persisted.
+- Bubble placement is safe-area / notch / navigation-bar aware.
+- Added JVM unit tests for toy parsing, age bands and bubble safety defaults.
+- Release APK is signed with the deterministic public CI key so releases upgrade over each other.
+
+DESKTOP
+- New desktop/main_darwin.go: macOS Cocoa + WebKit port sharing the Windows/Linux backend.
+- Moved owner verify/status HTTP handlers into desktop/handlers.go so all platforms share them.
+- AppVersion is 1.2.5 and BuildChannel is explicit ("public" or "owner").
+
+OWNER EDITION
+- Public builds contain no hash/salt: VerifyOwnerPIN refuses everything, Owner Panel disabled.
+- Android owner build injects the PBKDF2 hash through BuildConfig fields; panel requires 18+ and
+  a private build. PIN never in source, logs, release assets or workflow output.
+- New Go tests: correct PIN unlocks, wrong PIN rejected, public build refuses, salt uniqueness.
+
+CI CORRECTNESS
+- Public workflows now verify before publishing (PE32+ magic, AppImage ELF/AI magic, dpkg version,
+  APK anti-stub gate) and fail instead of uploading a stub or an empty release.
+- Release tags fall back to "-<run_attempt>" when the tag already exists, so re-runs never fail.
+
+DOCS
+- RELEASE-NOTES-1.2.5.md, FINAL-1.2.5.txt, CHANGES-1.2.5.txt (this file), TESTING.md refreshed
+  with an explicit tested / not-tested split.

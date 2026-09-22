@@ -11,6 +11,8 @@ on:
       - 'package.json'
       - 'index.html'
       - 'vite.config.js'
+      - 'README-Windows.md'
+      - 'RELEASE-NOTES-1.2.5.md'
       - '.github/workflows/public-windows-release.yml'
   workflow_dispatch:
 
@@ -37,11 +39,17 @@ jobs:
       - name: npm ci
         run: npm ci
 
-      - name: Build web
+      - name: Build web UI
         run: npm run build
 
-      - name: Build portable
+      - name: Build portable HTML fallback
         run: npm run build:portable
+
+      - name: Verify portable build exists
+        shell: pwsh
+        run: |
+          if (!(Test-Path deliverables/Miyu-Portable.html)) { throw "Miyu-Portable.html missing" }
+          Get-Item deliverables/Miyu-Portable.html | Select-Object Name, Length
 
       - name: Go mod tidy
         working-directory: desktop
@@ -49,78 +57,159 @@ jobs:
           go mod tidy -v
           cat go.mod
 
-      - name: Generate Windows resources
+      - name: Generate Windows resources (icon, manifest, version info 1.2.5)
         working-directory: desktop
         run: go run ./resourcegen
 
-      - name: Build Windows EXE
+      - name: Build Miyu.exe (WebView2 native shell, embedded UI)
         working-directory: desktop
         run: |
-          go build -trimpath -ldflags="-s -w -H windowsgui -X main.ownerBuildID=public-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu.exe .
-          dir ..\Miyu.exe
-          if (!(Test-Path ..\Miyu.exe)) { throw "Miyu.exe not built" }
+          go build -trimpath -ldflags="-s -w -H windowsgui -X main.AppVersion=1.2.5 -X main.BuildChannel=public -X main.ownerBuildID=public-${{ github.sha }}" -o ../Miyu.exe .
+          if (!(Test-Path ../Miyu.exe)) { throw "Miyu.exe was not produced" }
+          Get-Item ../Miyu.exe | Select-Object Name, Length
 
-      - name: Create deliverables and ZIP
+      - name: Verify Miyu.exe is a real 64-bit PE32+ executable
+        shell: pwsh
+        run: |
+          $path = "Miyu.exe"
+          $bytes = [System.IO.File]::ReadAllBytes($path)
+          if ($bytes.Length -lt 2000000) { throw "Miyu.exe is only $($bytes.Length) bytes - refusing to publish" }
+          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw "Missing MZ header - not a Windows executable" }
+          Write-Host "MZ header OK"
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          $peSig = [BitConverter]::ToUInt32($bytes, $peOffset)
+          if ($peSig -ne 0x00004550) { throw "Missing PE signature" }
+          $magic = [BitConverter]::ToUInt16($bytes, $peOffset + 24)
+          if ($magic -ne 0x20b) { throw "PE magic is 0x$('{0:X}' -f $magic) - expected 0x20B (PE32+, 64-bit)" }
+          Write-Host "PE32+ confirmed (0x20B, 64-bit)"
+          $hash = (Get-FileHash $path -Algorithm SHA256).Hash
+          "SHA256(Miyu.exe) = $hash" | Out-File -Append PE32-VERIFICATION.txt
+          "Size(bytes)     = $($bytes.Length)" | Out-File -Append PE32-VERIFICATION.txt
+          "PE magic        = 0x20B (PE32+ 64-bit)" | Out-File -Append PE32-VERIFICATION.txt
+          "Build version   = 1.2.5" | Out-File -Append PE32-VERIFICATION.txt
+          Get-Content PE32-VERIFICATION.txt
+
+      - name: Assemble deliverables (README, LICENSE, notices, portable fallback)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path deliverables | Out-Null
-          Copy-Item Miyu.exe deliverables/ -Force
-          if (Test-Path Miyu-Portable.html) { Copy-Item Miyu-Portable.html deliverables/Miyu-Portable.html -Force }
-          elseif (Test-Path deliverables/Miyu-Portable.html) { Write-Host "Portable already in deliverables" }
-          else { Write-Host "Portable not found, checking root" ; Get-ChildItem -Recurse -Filter "*Portable*.html" | Select-Object -First 5 }
-          Get-ChildItem deliverables/
-          # Create ZIP with both files if present
-          $files = @("deliverables/Miyu.exe")
-          if (Test-Path "deliverables/Miyu-Portable.html") { $files += "deliverables/Miyu-Portable.html" }
-          Compress-Archive -Path $files -DestinationPath Miyu-Windows.zip -Force
-          Get-ChildItem Miyu-Windows.zip
-          # Verify PE32+
-          $bytes = [System.IO.File]::ReadAllBytes("Miyu.exe")
-          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw "Not MZ executable" }
-          Write-Host "MZ header OK"
-          # Check PE32+ (0x20b)
-          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
-          $magic = [BitConverter]::ToUInt16($bytes, $peOffset + 24)
-          if ($magic -eq 0x20b) { Write-Host "PE32+ confirmed (64-bit)" } else { Write-Host "PE magic $magic (not 0x20b) but still PE" }
+          Copy-Item Miyu.exe deliverables/Miyu.exe -Force
+          Copy-Item Miyu-Portable.html deliverables/Miyu-Portable.html -Force
+          Copy-Item README-Windows.md deliverables/README-Windows.md -Force
+          Copy-Item README.md deliverables/README.md -Force
+          Copy-Item LICENSE deliverables/LICENSE.txt -Force
+          Copy-Item THIRD-PARTY-NOTICES.txt deliverables/ -Force
+          Copy-Item "START HERE.txt" deliverables/ -Force
+          if (Test-Path licenses) { Copy-Item licenses deliverables/licenses -Recurse -Force }
+          if (Test-Path PE32-VERIFICATION.txt) { Copy-Item PE32-VERIFICATION.txt deliverables/ -Force }
+          Copy-Item RELEASE-NOTES-1.2.5.md deliverables/ -Force
+          Get-ChildItem -Recurse deliverables | Select-Object FullName, Length
 
-      - name: SHA256
+      - name: Create Miyu-Windows.zip
         shell: pwsh
         run: |
-          $hashExe = (Get-FileHash Miyu.exe -Algorithm SHA256).Hash
-          $hashZip = (Get-FileHash Miyu-Windows.zip -Algorithm SHA256).Hash
-          "$hashExe  Miyu.exe" | Out-File SHA256SUMS.txt
-          "$hashZip  Miyu-Windows.zip" | Out-File -Append SHA256SUMS.txt
-          if (Test-Path deliverables/Miyu-Portable.html) {
-            $hashPortable = (Get-FileHash deliverables/Miyu-Portable.html -Algorithm SHA256).Hash
-            "$hashPortable  Miyu-Portable.html" | Out-File -Append SHA256SUMS.txt
-          }
-          cat SHA256SUMS.txt
+          Compress-Archive -Path deliverables/* -DestinationPath Miyu-Windows.zip -Force
+          if (!(Test-Path Miyu-Windows.zip)) { throw "Miyu-Windows.zip was not created" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path Miyu-Windows.zip))
+          $names = $zip.Entries | ForEach-Object { $_.FullName }
+          $zip.Dispose()
+          $names | Out-File zip-contents.txt
+          Get-Content zip-contents.txt
+          if (-not ($names -match 'Miyu\.exe$')) { throw "Miyu-Windows.zip does not contain Miyu.exe" }
+          if (-not ($names -match 'Miyu-Portable\.html$')) { throw "Miyu-Windows.zip does not contain the portable fallback" }
+          Write-Host "ZIP contains the native exe and the portable fallback"
 
-      - name: Upload artifact
+      - name: SHA256SUMS.txt
+        shell: pwsh
+        run: |
+          Remove-Item SHA256SUMS.txt -ErrorAction SilentlyContinue
+          $files = @("Miyu.exe", "Miyu-Windows.zip", "deliverables/Miyu-Portable.html", "deliverables/README-Windows.md", "deliverables/RELEASE-NOTES-1.2.5.md")
+          foreach ($f in $files) {
+            if (Test-Path $f) {
+              $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+              $size = (Get-Item $f).Length
+              "$h  $f  ($size bytes)" | Out-File -Append -Encoding utf8 SHA256SUMS.txt
+            }
+          }
+          Get-Content SHA256SUMS.txt
+
+      - name: Compute release tag
+        id: tag
+        shell: bash
+        run: |
+          BASE="v1.2.5-windows-${GITHUB_RUN_NUMBER}"
+          TAG="$BASE"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "refs/tags/$TAG"; then
+            TAG="$BASE-${GITHUB_RUN_ATTEMPT}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag will be: $TAG"
+
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Miyu-Windows
+          name: Miyu-Windows-Public
           path: |
             Miyu.exe
             Miyu-Windows.zip
             SHA256SUMS.txt
+            PE32-VERIFICATION.txt
+            zip-contents.txt
             deliverables/Miyu-Portable.html
+            deliverables/README-Windows.md
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: Release
-        uses: softprops/action-gh-release@v1
+      - name: Create GitHub Release v1.2.5 (Windows)
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Miyu Windows Public v1.2.5 (${{ steps.tag.outputs.tag }})
+          fail_on_unmatched_files: true
           files: |
             Miyu.exe
             Miyu-Windows.zip
             SHA256SUMS.txt
+            PE32-VERIFICATION.txt
+            zip-contents.txt
             deliverables/Miyu-Portable.html
-          tag_name: v1.2.0-windows-${{ github.run_number }}
-          name: Miyu Windows Public v1.2.0
+            deliverables/README-Windows.md
+            deliverables/RELEASE-NOTES-1.2.5.md
           body: |
-            Public Windows Release
-            - Miyu.exe WebView2 Go backend embed UI, PE32+ verified
-            - Miyu-Portable.html fallback
-            - SHA256
-            - Built from ${{ github.sha }}
+            ## Miyu for Windows — v1.2.5 (native desktop, primary)
+
+            Built on a GitHub-hosted `windows-latest` runner from commit `${{ github.sha }}`.
+
+            ### Files
+            | File | What it is |
+            | --- | --- |
+            | `Miyu.exe` | **Primary.** Native Windows app: Go backend + WebView2 shell, UI embedded inside the exe. Verified PE32+ (MZ header, PE magic `0x20B`, 64-bit). |
+            | `Miyu-Windows.zip` | The exe plus the portable fallback, README, LICENSE, third-party notices, verification report. |
+            | `Miyu-Portable.html` | **Fallback only.** Single-file browser edition for locked-down machines with no WebView2. Not the native app. |
+            | `SHA256SUMS.txt` | SHA-256 for every file above. |
+            | `PE32-VERIFICATION.txt` | Proof recorded by the build that the exe is a real 64-bit PE32+ binary. |
+
+            ### Native features in this build
+            - WebView2 window with the UI embedded in the binary (no external files needed)
+            - Always-on-top window action, mini companion mode, tray-style behaviour hooks
+            - Local Go backend: bounded worker pool, context timeouts, structured JSON logs, crash recovery
+            - Loopback bridge on `127.0.0.1` with a per-session token and strict Host validation
+            - Encrypted local state (Windows DPAPI), atomic writes, backup/restore
+            - Global hotkey / window actions surfaced to the UI
+            - Auto-update check over HTTPS manifest with SHA-256 + version compare, redirect blocking, never executes unverified payloads
+            - Free local AI: connect Qwen3 4B / Gemma3 4B / Llama3.2 3B / Phi-4 mini through Ollama or any OpenAI-compatible endpoint (localhost or HTTPS only, API key is session-only and never written to disk)
+
+            ### Install
+            1. Download `Miyu.exe` (or `Miyu-Windows.zip` and unzip it).
+            2. Double-click `Miyu.exe`. Windows 10/11 with the Microsoft Edge WebView2 Runtime (preinstalled on almost every machine) is required.
+            3. If WebView2 is missing, open `Miyu-Portable.html` instead — the UI runs, without the native backend.
+
+            ### Privacy / safety
+            - No camera, no screen capture, no microphone recording without an explicit click, no reading of other apps.
+            - No owner PIN, no keystore and no API key is present in this public build; the Owner Panel is disabled in public binaries.
+            - Vodafone Cash support card (01027653109) is copy/open-dialer only — Miyu never starts a transfer.
+
+            Verify your download: `sha256sum`/`Get-FileHash -Algorithm SHA256` against `SHA256SUMS.txt`.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}

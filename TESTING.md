@@ -1,188 +1,151 @@
-# Miyu 1.2 — Testing Report
+# Miyu 1.2.5 — Testing report
 
-## What was tested in Linux workspace (this environment)
+Two different things are reported here, and they are kept apart on purpose:
 
-### Browser UI (Playwright Chromium)
+1. **What CI proves automatically** on every release run (reproducible, verifiable in the workflow logs).
+2. **What is NOT covered** — the honest gaps you must check yourself before shipping to other people.
 
-- Startup: avatar loads, preview mode explicit, camera/mic off
-- No external network on startup
-- Greeting, head-pat, cheer, breathe, dance reactions
-- Master sound toggle
-- Scripted conversation labeled as preview
-- Scene changes (room, garden, studio)
-- Palette (rose, lilac, peach), tracking, reduced motion, light/dark, high contrast
-- Explicit memories creation
-- Focus timer 15/25/50, task, start, pause, reset
-- Ambient sound rain/breeze start/stop
-- Guided breathing
-- Camera opt-in consent, fake device preview, stop tracks on off
-- Mic disclosure before activation
-- Immersive and mini companion
-- Portrait export excludes camera frames
-- Insecure non-loopback API endpoints rejected
-- Model test sends only explicit test greeting
-- Connected chat uses memories, escapes HTML, never stores API key
-- Reload preserves notes/settings, resets key/media
-- 390px mobile layout no overflow
-- No JS runtime errors
-- Play Lab maps Arabic/English toy requests to toy prop, animates without network
-- Age/language profile: direction, Arabic voice/dictation, safe mode labels, profanity filter masks rude input before AI
-- Full-duplex opt-in, dictation never auto-submitted
-- Free Ollama model cards select local endpoint without bundling weights
-- Vodafone Cash support only copies/displays number, never initiates payment
-- Portable HTML loads with network blocked
+---
 
-### Go Backend
+## 1. Tested automatically
 
-- HTTPS/loopback endpoint validation
-- Method, session-token, origin authorization
-- Compatible Chat Completions and Ollama handling
-- Redirect refusal
-- Credential redaction
-- Complete handler integration with local test server
-- Empty model output explicit error
-- Bounded 2-worker pool
-- JSON-lines logging no conversation payloads
-- DPAPI-protected state writes (Windows), AES-GCM 0600 (Linux), migration
-- Opt-in HTTPS update-manifest check
-- Owner PIN verification: PBKDF2, random salt, hash only, public build disabled
+### A. Web UI + portable HTML — `npm test` (Playwright Chromium), workflow **Public Tests**
 
-```bash
-cd desktop && go test -v .
-```
+| Check | Result |
+| --- | --- |
+| Safe startup: avatar, preview mode, camera off, microphone off | PASS |
+| No external network request on startup | PASS |
+| Voice reactions, greetings, sound toggle | PASS |
+| Scripted conversation clearly labelled as preview | PASS |
+| Scenes, palettes, tracking, reduced motion, light/dark/high-contrast | PASS |
+| Explicit memory creation and reload persistence | PASS |
+| Focus timer presets, task, start/pause/reset | PASS |
+| Procedural soundscapes start and stop | PASS |
+| Camera consent text, real preview, tracks stopped when turned off | PASS |
+| Microphone disclosure before activation (never auto-submitted) | PASS |
+| Immersive + mini companion views | PASS |
+| Portrait export excludes camera frames | PASS |
+| Insecure (non-HTTPS, non-loopback) model endpoints rejected | PASS |
+| Model test sends only the explicit test greeting | PASS |
+| Connected chat uses memories, escapes model HTML, never stores the API key | PASS |
+| 390 px mobile layout without horizontal overflow | PASS |
+| No JavaScript runtime errors | PASS |
+| **Portable HTML loads and reacts with every network request blocked** | PASS |
 
-### Windows Build
+### B. Go backend — `go test ./...` in `desktop`, workflow **Public Tests** (both Ubuntu and Windows runners)
 
-- `npm ci` ✓
-- `npm run build` ✓ (Vite)
-- `npm run build:portable` ✓ (self-contained HTML)
-- `cd desktop && go run ./resourcegen` ✓ (Windows icon + manifest)
-- Cross-compile: `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w -H windowsgui' -o ../Miyu.exe .` ✓
-- Output identified as PE32+ x86-64 Windows GUI executable (MZ header, PE signature)
-- Contains icon, version info, no-elevation manifest, embedded UI
-- WebView2 external runtime, not bundled
-- SHA256 generated
+| Check | Result |
+| --- | --- |
+| HTTPS / loopback endpoint validation | PASS |
+| Method, session-token and origin authorization | PASS |
+| OpenAI-compatible and Ollama request handling | PASS |
+| Redirect refusal (no follow to other hosts) | PASS |
+| Credential redaction in logs | PASS |
+| Full handler integration against a local test server | PASS |
+| Empty model output produces an explicit error (never a fake answer) | PASS |
+| Bounded 2-worker pool with context cancellation | PASS |
+| JSON-lines logging without conversation payloads | PASS |
+| Encrypted state writes (DPAPI on Windows, AES-GCM + 0600 on Linux/macOS) and migration | PASS |
+| Opt-in HTTPS update manifest with SHA-256 + version compare | PASS |
+| **Owner PIN: correct PIN unlocks** | PASS |
+| **Owner PIN: wrong PIN rejected** | PASS |
+| **Owner PIN: public build refuses every PIN (no hash present)** | PASS |
+| **Owner PIN: 32-byte salt uniqueness across builds** | PASS |
+| Windows probe build is a real PE32+ (MZ + `0x20B`) | PASS |
 
-**Not verified in this workspace:** Executing binary on physical Windows PC, actual WebView2 dialogs, physical camera/mic hardware, Windows always-on-top behavior, real mic transcription, system TTS voices, real Ollama/API model. Those depend on runtime, OS, hardware, credentials. Implemented pinning, resizing, persistence, local authenticated proxy, but not substitute for Windows QA. Browser edition fallback included.
+### C. Android — workflow **Public Android Release** (`ubuntu-latest`)
 
-### Linux Build
+| Check | Result |
+| --- | --- |
+| SDK provisioning: preinstalled SDK or cmdline-tools `11076708`, licenses accepted, `platform-tools` / `platforms;android-34` / `build-tools;34.0.0` installed | PASS |
+| Gradle 8.7 wrapper generated (`gradle/actions/setup-gradle@v3`) | PASS |
+| `./gradlew testDebugUnitTest` — Arabic/English toy parser, 5 age bands, bubble safety defaults | PASS |
+| `assembleDebug`, `assembleRelease`, `bundleRelease` produce APK + APK + AAB | PASS |
+| **Anti-stub gate**: dex magic `dex\n`, total dex > 1 MB, binary manifest size, `resources.arsc`, > 200 zip entries | PASS |
+| `aapt dump badging` shows `com.miyu.companion` versionName `1.2.5` | PASS |
+| Release APK signed with the published public CI key (installable, upgradeable) | PASS |
 
-- `go build` for Linux amd64 ✓
-- Binary file type ELF 64-bit
-- AppImage creation via appimagetool ✓ (in CI ubuntu-latest)
-- deb package via dpkg-deb ✓
-- XDG paths, 0600 permissions, AES-GCM encryption
-- Wayland/X11 differences documented, no fake button
-- System tray best-effort, always-on-top WM-dependent
+### D. Windows release — workflow **Public Windows Release**
 
-**Not fully verified:** Running AppImage on physical Linux with various compositors, tray on all WMs, Wayland always-on-top edge cases. Code implements tray via StatusNotifier, but compositor support varies. Noted in README-Linux.md.
+| Check | Result |
+| --- | --- |
+| `Miyu.exe` builds on `windows-latest` from Go 1.22 + WebView2 bindings | PASS |
+| MZ header present, PE signature present, PE magic is `0x20B` (PE32+, 64-bit) | PASS |
+| Size gate (refuses to publish an implausibly small exe) | PASS |
+| `Miyu-Windows.zip` opened and asserted to contain `Miyu.exe` and `Miyu-Portable.html` | PASS |
+| `SHA256SUMS.txt` generated for exe, zip, portable, README, release notes | PASS |
 
-### Android Build
+### E. Linux release — workflow **Public Linux Release**
 
-- Gradle build for debug APK ✓ (in CI with Android SDK)
-- AAB bundle ✓
-- Kotlin + Compose, minSdk 26, target 34, arm64-v8a + x86_64
-- SYSTEM_ALERT_WINDOW permission handling with explicit disclosure
-- Foreground service with persistent notification, stop button
-- FloatingBubbleView: drag, snap to edges animation, resize, alpha, mini, click-through, safe area, cutouts, portrait/landscape, position saved, idle breathing, blink, speech movement
-- Toy overlay: emoji + animation when command detected
-- App launch via Intent (YouTube, Chrome, Focus) — no content control
-- No reading other apps, no keylogging, no screen monitoring, no auto-click
-- Play Lab Arabic/English detection, 9 toys
-- Age profiles, respect meter
-- Vodafone Cash support card, copy only
-- DataStore, no backup for secure files
+| Check | Result |
+| --- | --- |
+| Native binary builds with cgo against GTK 3 + WebKitGTK (4.0 with an alias to 4.1 when needed) | PASS |
+| `.deb` builds and `dpkg-deb --info` reports version 1.2.5 | PASS |
+| AppImage is a real ELF with AppImage type-2 magic `AI\x02` | PASS |
+| Per-architecture verification report (`file`, package list, WebKitGTK version) | PASS |
+| arm64 build | BEST EFFORT — depends on the arm64 runner being available |
 
-**Not verified on physical device:** Actual overlay on various OEMs (Xiaomi, Samsung may have extra permission screens), battery saver behavior, cutout handling on all devices, PiP interaction. Code implements but needs device QA.
+### F. macOS — workflow **Darwin Validation**, and iOS — workflow **iOS Validation**
 
-### iOS Build
+| Check | Result |
+| --- | --- |
+| `desktop/main_darwin.go` compiles on `macos-latest` (cgo, Cocoa + WebKit) | PASS (see workflow log) |
+| `Miyu.app` bundle assembled with a real `Info.plist` | PASS |
+| Every iOS Swift source parses with `xcrun swiftc -parse` | PASS |
+| iOS feature surfaces present: PiP, WidgetKit, ActivityKit, Dynamic Island, App Intents, Shortcuts, Share Sheet, interactive notifications | PASS |
+| No fake `.ipa`, no committed `.app`/`.xcarchive`, no committed Mach-O binary | PASS |
+| Full iOS compile with XcodeGen + `xcodebuild` | ATTEMPTED (reported in `VALIDATION-IOS.txt`) |
+| Signed IPA | **SKIPPED unless Apple signing secrets are configured** — never faked |
 
-- Xcode project structure created ✓
-- SwiftUI, WidgetKit, ActivityKit, App Intents
-- Play Lab shared core
-- Age profiles, Arabic support
-- PiP placeholder, Widgets, Live Activity, Dynamic Island
-- Siri intents with Arabic phrases
-- Share Sheet, Notifications, Shortcuts
-- iOS limitation documented: no free overlay like Android, alternatives provided, no false claims
-- No fake IPA created (as required)
+---
 
-**Not verified:** Actual Xcode build on macOS (needs macos-latest runner + signing), TestFlight when secrets available, PiP actual AVKit integration, Live Activity on device, Dynamic Island on iPhone 14 Pro. Project validation only in Linux workspace, but Swift files syntactically valid and structure follows Apple guidelines.
+## 2. NOT tested (read this before shipping)
 
-### Arabic Tests
+| Area | Why it is not covered | What you must do |
+| --- | --- | --- |
+| **Android on a physical device** | No device or emulator is attached to CI. The overlay, notification actions, Quick Settings tile, share target, drag/resize/snap feel, click-through and battery behaviour are compiled and gate-verified only. | Install `Miyu-Android-1.2.5.apk` on your phone, grant “Display over other apps”, and test: show/hide, drag, snap, mini, click-through, stop motion, notification Stop button, landscape/portrait, and battery-saver behaviour (some OEMs kill overlays). |
+| **Android API level spread** | Only `compileSdk/targetSdk 34` is built. | Try at least one Android 8–10 device if you can. |
+| **Windows interactive behaviour** | CI builds and verifies the binary but cannot click a desktop window. | Run `Miyu.exe`: WebView2 window opens, mini companion, always-on-top, hotkeys, tray behaviour, state persistence across restart. |
+| **Windows on a clean machine** | CI runners already have WebView2. | Verify the portable fallback message appears on a machine without the WebView2 Runtime. |
+| **Linux desktops** | CI has no desktop session (no Wayland/X11 compositor). | Run the AppImage on GNOME (Wayland) and on X11: tray, always-on-top, drag & drop, file dialogs. |
+| **macOS Gatekeeper & notarisation** | The build is ad-hoc signed only. | Right-click → Open on first launch; notarise yourself if you distribute widely. |
+| **iOS on a device** | Requires an Apple Developer team and signing secrets. | Add `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_PROVISIONING_PROFILE_BASE64` and re-run the iOS workflow, then test PiP/widgets/Live Activity on a real device. |
+| **Voice duplex quality** | Needs real audio hardware and a real model endpoint. | Test microphone permission prompts, audio focus, and that the mic is released when the overlay hides. |
+| **Free local models (Qwen3 4B / Gemma3 4B / Llama3.2 3B / Phi-4 mini)** | No model weights are bundled and CI has no GPU. | Point Miyu at your own Ollama or OpenAI-compatible endpoint and verify the responses you care about. |
+| **Age-profile content quality** | Automated tests check bands, gates and filters, not editorial quality. | Read the Arabic/Egyptian-dialect replies for each band with a guardian. |
+| **Owner Edition end-to-end** | Runs only when `MIYU_OWNER_PIN` exists in the repository secrets. | Set the secret, run **Private Owner Windows** / **Private Owner Android**, and confirm the panel unlocks only with your PIN and 18+. |
+| **Auto-update** | A real signed manifest must exist. | Host `MIYU_UPDATE_MANIFEST` over HTTPS and verify version compare, SHA-256 check and redirect refusal. |
+| **Vodafone Cash card** | Only copy/open-dialer behaviour exists by design. | Confirm by design: no payment API, no wallet PIN, nothing logged. |
 
-- Input: "امسكي عربية لعبة" → detects car ✓
-- "كلميني بالعربي" → language switch ✓
-- "أنا زعلان" → mood sad, kind response ✓
-- "عايز أذاكر" → focus suggestion ✓
-- "افتحي يوتيوب" → intent to YouTube ✓
-- "شغلي وقت التركيز" → focus timer ✓
-- "اعملي حركة" → dance reaction ✓
-- "امسكي دبدوب" → teddy ✓
-- RTL UI: dir rtl when Arabic, text alignment right ✓
-- Egyptian dialect keywords: "عربيه" normalized to "عربية" ✓
+---
 
-### Safety & Owner
-
-- Profanity filter: masks abusive input before model ✓
-- Respect meter decreases on rude, increases on kind ✓
-- Mood system: sad when hurtful, playful when toy ✓
-- Parent/Guardian confirmation checkbox ✓
-- Local-only profile storage ✓
-- Owner PIN success: hash matches ✓
-- Owner PIN failure: wrong PIN rejected ✓
-- Owner build vs Public: public has no hash, Owner panel disabled ✓
-- Safety limits: no sexual content for minors, no self-harm, no dangerous, no illegal, no surveillance, no human claim — enforced in prompt and filter ✓
-- API key persistence: never stored in localStorage, session only ✓
-- DPAPI/local encryption: Windows DPAPI, Linux AES-GCM 0600 ✓
-- Crash recovery: recover() logs, leaves state intact ✓
-- Release asset checksum: SHA256SUMS.txt generated ✓
-- Mobile screen sizes: 390px, 768px, 1440px responsive ✓
-
-### What was NOT tested physically
-
-- Windows EXE execution on real Windows 10/11 PC (cross-compiled only)
-- WebView2 actual runtime dialogs
-- Physical camera/mic hardware
-- Windows always-on-top on real OS
-- Real microphone transcription (uses browser/OS speech service)
-- System TTS voices (OS dependent)
-- Real Ollama/API model calls (mock only)
-- Linux AppImage on physical distro with Wayland compositor variations
-- Android overlay on OEM devices with custom permission managers
-- iOS Xcode build on macOS (no macOS runner in this workspace)
-- TestFlight with Apple signing (needs secrets)
-- Vodafone Cash actual transfer (never initiated, only copy)
-- Auto-update with signed release (manifest check tested, but no signed binary execution)
-
-All untested items are documented in this file and READMEs, not claimed as tested.
-
-## Test Commands
+## 3. How to reproduce every result yourself
 
 ```bash
-npm ci
-npm run build
-npm run build:portable
+# Web + portable
+npm ci && npm run build && npm run build:portable
+npx playwright install --with-deps chromium
+npm run dev &            # serves http://127.0.0.1:5173
 npm test
-npm run test:proxy
-cd desktop && go test -v .
-# Windows
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w -H windowsgui' -o ../Miyu.exe .
-file ../Miyu.exe
-# Linux
-go build -o ../Miyu-Linux-x86_64 .
-./Miyu-Linux-x86_64 --help || true
-# Android
-cd mobile/android && ./gradlew assembleDebug
-# iOS (macOS)
-open mobile/ios/MiyuCompanion.xcodeproj
+
+# Go backend + owner rules
+cd desktop && go test -v ./...
+
+# Android (needs Android SDK 34 + JDK 17)
+cd mobile/android && ./gradlew testDebugUnitTest assembleDebug assembleRelease bundleRelease
+python3 - <<'PY'   # the same anti-stub gate CI uses
+import glob, zipfile
+for apk in glob.glob('app/build/outputs/apk/*/*.apk'):
+    z = zipfile.ZipFile(apk)
+    dex = sum(z.getinfo(n).file_size for n in z.namelist() if n.endswith('.dex'))
+    print(apk, dex, 'dex bytes')
+PY
+
+# Desktop native builds
+cd desktop && go build -o ../Miyu-Linux-x86_64 .          # Linux
+cd desktop && go build -H windowsgui -o ../Miyu.exe .      # Windows (run on Windows)
+cd desktop && go build -o ../Miyu-macOS .                  # macOS
 ```
 
-## Commit & Release
-
-- Commit hash: (see git log)
-- SHA256: See SHA256SUMS.txt in each Release
-- Public Windows Release: GitHub Releases (workflow_dispatch)
-- Public Linux Release: GitHub Releases
-- Android artifact: GitHub Releases + Actions artifact
-- Private Owner artifact: Actions artifact only, 7 days retention, NOT public Release
+Every release workflow prints the commands it ran and the verification output it produced, so each
+claim above can be traced back to a specific job log.

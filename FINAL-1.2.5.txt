@@ -1,0 +1,39 @@
+MIYU 1.2.5 — FINAL BUILD NOTES
+==============================
+
+WHAT MIYU IS AT 1.2.5
+Miyu is a multi-platform companion product, not a browser page:
+  * Windows  : Miyu.exe  — Go backend + WebView2 shell, UI embedded in the binary (PRIMARY)
+  * Linux    : AppImage + .deb + raw binary — GTK/WebKitGTK native shell
+  * macOS    : Miyu.app bundle from a Cocoa/WebKit native build
+  * Android  : Kotlin + Jetpack Compose app with a real floating companion overlay
+  * iOS      : SwiftUI companion using only Apple-approved surfaces (PiP, widgets, Live Activity,
+               Dynamic Island, App Intents, Shortcuts, Share Sheet, interactive notifications)
+  * Fallback : Miyu-Portable.html — a single file that runs with zero network access
+
+WHAT IS REAL IN THIS RELEASE
+  * Every binary comes from a GitHub Actions run on a real runner, then is verified by the workflow
+    before it is published (PE32+ check for Windows, AppImage magic for Linux, dex/manifest/resource
+    checks for Android).
+  * No release is created without its assets. No stub, no placeholder, no "README-BUILD-FAILED.txt".
+  * No `.ipa` is published unless Apple signing secrets exist. Faking one would be worse than not
+    shipping one.
+
+HONEST GAPS (see TESTING.md for the full list)
+  * Android overlay behaviour is compiled and gate-verified but not exercised on a physical device
+    by CI. Install it on your phone and confirm the bubble, notification actions and battery
+    behaviour on your specific OEM before shipping it to anyone.
+  * The macOS build is ad-hoc signed (right-click → Open on first launch).
+  * Interactive desktop behaviours (tray, hotkeys, window position) are not click-tested by CI.
+  * arm64 Linux is best effort and depends on whether the arm64 runner is available.
+
+VERSION AND INDEXING
+  versionName 1.2.5 / versionCode 15 (Android), AppVersion 1.2.5 (desktop), package.json 1.2.5.
+
+OWNER EDITION
+  Built only by the private workflows from the MIYU_OWNER_PIN secret. 7-day private artifacts,
+  no public release, no PIN anywhere in the repository, in logs or in release assets.
+
+SUPPORT
+  Vodafone Cash 01027653109 — the app only copies the number or opens the dialer.
+  There is no payment API, no wallet PIN and nothing is logged. Children need a guardian.

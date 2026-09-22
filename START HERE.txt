@@ -1,8 +1,9 @@
-MIYU HOSHINO
+MIYU HOSHINO — version 1.2.5
 A little company. A little magic.
 
 PRIMARY PRODUCT: Miyu.exe (Windows Native)
-FALLBACK: Miyu-Portable.html (Browser)
+ALSO NATIVE: Linux AppImage/.deb, macOS Miyu.app, Android APK
+FALLBACK: Miyu-Portable.html (Browser, single file, works offline)
 
 WINDOWS 10/11, 64-bit:
 1. Extract Miyu-Windows.zip to a folder

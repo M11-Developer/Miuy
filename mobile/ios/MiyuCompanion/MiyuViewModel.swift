@@ -256,17 +256,41 @@ struct AgeProfileView: View {
     }
 }
 
+/// Picture-in-Picture host. This is the real `AVPictureInPictureController` path: iOS does not
+/// allow a free floating overlay, PiP is the supported way for Miyu to stay visible above other apps.
+@available(iOS 15.0, *)
 struct PiPView: View {
+    @State private var controller = MiyuPiPController()
+    @State private var running = false
+
     var body: some View {
-        VStack {
+        VStack(spacing: 14) {
             Text("Miyu PiP Mode")
                 .font(.headline)
-            Text("✨｡◕‿◕｡")
-                .font(.largeTitle)
-            Text("هذه نافذة PiP الرسمية من iOS")
-                .font(.caption)
-            Text("تظهر فوق التطبيقات بحدود PiP")
+            MiyuPiPHostView(controller: controller)
+                .frame(width: 190, height: 190)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.pink.opacity(0.25), lineWidth: 2))
+            Text("نافذة PiP الرسمية من iOS: تظل Miyu ظاهرة فوق التطبيقات بحدود النظام نفسه.")
                 .font(.caption2)
+                .multilineTextAlignment(.center)
+            HStack(spacing: 12) {
+                Button("تفعيل PiP") {
+                    controller.start()
+                    running = true
+                }
+                .buttonStyle(.borderedProminent)
+                Button("إيقاف") {
+                    controller.stop()
+                    running = false
+                }
+                .buttonStyle(.bordered)
+            }
+            Text(controller.isSupported
+                 ? (running ? "PiP يعمل الآن ✅" : "PiP مدعوم على هذا الجهاز")
+                 : "PiP غير مدعوم على هذا الجهاز")
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
         .padding()
     }

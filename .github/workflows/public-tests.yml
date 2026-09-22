@@ -1,0 +1,210 @@
+name: Public Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'public/**'
+      - 'shared/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'desktop/**'
+      - 'package.json'
+      - 'index.html'
+      - '.github/workflows/public-tests.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  web-tests:
+    name: Web UI + portable HTML (Playwright)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Build UI and portable HTML
+        run: |
+          npm run build
+          npm run build:portable
+          ls -l deliverables/Miyu-Portable.html
+          SIZE=$(stat -c%s deliverables/Miyu-Portable.html)
+          if [ "$SIZE" -lt 1000000 ]; then echo "::error::portable HTML looks too small ($SIZE bytes)"; exit 1; fi
+          sha256sum deliverables/Miyu-Portable.html | tee portable-sha256.txt
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Start preview server
+        run: |
+          nohup npm run dev > dev-server.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5173/ >/dev/null 2>&1; then
+              echo "dev server is up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:5173/ | head -c 200
+          echo
+
+      - name: Functional tests (camera/mic consent, memory, focus, provider safety, offline portable)
+        run: npm test
+
+      - name: Go tests for the local bridge (same code as the desktop app)
+        run: |
+          cd desktop
+          go test -v ./... | tee ../go-tests.log
+
+      - name: Test report
+        if: always()
+        run: |
+          {
+            echo "Miyu public test report"
+            echo "commit: ${{ github.sha }}"
+            echo "runner: ubuntu-latest"
+            echo
+            echo "--- portable checksum ---"
+            cat portable-sha256.txt 2>/dev/null || true
+            echo
+            echo "--- playwright results ---"
+            cat tests/results.json 2>/dev/null || echo "no results.json"
+            echo
+            echo "--- go tests (tail) ---"
+            tail -n 40 go-tests.log 2>/dev/null || true
+            echo
+            echo "--- dev server log (tail) ---"
+            tail -n 20 dev-server.log 2>/dev/null || true
+          } > TEST-REPORT.txt
+          cat TEST-REPORT.txt
+
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Miyu-Public-Tests
+          path: |
+            TEST-REPORT.txt
+            tests/*.png
+            tests/results.json
+            portable-sha256.txt
+            go-tests.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  windows-native-tests:
+    name: Windows native Go build + tests
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: desktop/go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: npm ci and portable build
+        run: |
+          npm ci
+          npm run build:portable
+
+      - name: Go vet + tests (bridge, owner PIN, updater)
+        working-directory: desktop
+        run: |
+          go mod tidy
+          go vet ./...
+          go test -v ./...
+
+      - name: Prove the Windows binary really compiles here
+        working-directory: desktop
+        run: |
+          go run ./resourcegen
+          go build -trimpath -ldflags="-s -w -H windowsgui -X main.AppVersion=1.2.5" -o ../Miyu-probe.exe .
+          $bytes = [System.IO.File]::ReadAllBytes("../Miyu-probe.exe")
+          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw "probe exe is not MZ" }
+          $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+          $magic = [BitConverter]::ToUInt16($bytes, $pe + 24)
+          if ($magic -ne 0x20b) { throw "probe exe is not PE32+" }
+          Write-Host "probe exe is PE32+ ($($bytes.Length) bytes) - the release workflow builds exactly this"
+
+  security-and-owner-checks:
+    name: Owner PIN handling + repository hygiene
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Owner PIN hash generation must work and must never leak the PIN
+        run: |
+          set -e
+          DUMMY_PIN="ci-dummy-pin-9f3a"
+          cd tools
+          MIYU_OWNER_PIN="$DUMMY_PIN" go run gen-owner-hash.go > /tmp/owner-dummy.env
+          cat /tmp/owner-dummy.env | sed 's/=.*/=[REDACTED]/'
+          grep -q "^salt=" /tmp/owner-dummy.env
+          grep -q "^hash=" /tmp/owner-dummy.env
+          grep -q "LDFLAGS=" /tmp/owner-dummy.env
+          SALT_HEX=$(grep '^salt=' /tmp/owner-dummy.env | cut -d= -f2)
+          HASH_HEX=$(grep '^hash=' /tmp/owner-dummy.env | cut -d= -f2)
+          [ ${#SALT_HEX} -eq 64 ] || { echo "::error::salt is not 32 bytes"; exit 1; }
+          [ ${#HASH_HEX} -eq 64 ] || { echo "::error::hash is not 32 bytes"; exit 1; }
+          if grep -q "$DUMMY_PIN" /tmp/owner-dummy.env; then
+            echo "::error::The PIN appeared in the generated file - hashing is broken"
+            exit 1
+          fi
+          echo "PBKDF2-SHA256 output looks correct (32-byte salt, 32-byte hash, no plaintext PIN)."
+
+      - name: Owner verification logic (correct PIN, wrong PIN, public build disabled)
+        run: |
+          cd desktop
+          go test -v -run "Owner|PBKDF2" ./...
+
+      - name: Repository hygiene (no secrets, no keystores, no owner artefacts committed)
+        run: |
+          set -e
+          fail() { echo "::error::$1"; exit 1; }
+          for pattern in "*.jks" "*.keystore" "owner.env" "Miyu-Owner.exe" "Miyu-Owner-*.apk" ".env"; do
+            if git ls-files --error-unmatch "$pattern" >/dev/null 2>&1; then
+              fail "Forbidden file committed: $pattern"
+            fi
+          done
+          if git grep -nE 'MIYU_OWNER_PIN[[:space:]]*=[[:space:]]*["'"'"'][^"'"'"']+' -- ':!*.md' ':!*.txt' ':!.github/workflows/*'; then
+            fail "A hardcoded owner PIN was found in source"
+          fi
+          if git grep -nEi 'pin[[:space:]]*[:=][[:space:]]*"?[0-9]{4,}"?' -- 'desktop/*.go' 'app/*.js'; then
+            fail "A hardcoded numeric PIN was found"
+          fi
+          echo "No keystore, no owner.env, no hardcoded PIN in tracked files."
+
+      - name: Disclose the public owner gate honestly
+        run: |
+          echo "Public builds ship WITHOUT any owner hash, so VerifyOwnerPIN always returns an error"
+          echo "and the Owner Panel cannot be unlocked. The hash is only injected at build time in the"
+          echo "private owner workflows from the MIYU_OWNER_PIN secret."
