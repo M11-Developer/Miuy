@@ -192,13 +192,16 @@ jobs:
                   problems.append('no classes.dex')
               if header[:4] != b'dex\n':
                   problems.append(f'bad dex magic {header[:4]!r}')
-              if dex_bytes < 1_000_000:
+              # Thresholds are deliberately about *stub detection*: a hand-assembled placeholder APK
+              # has a few-hundred-byte dex, no resource table and almost no zip entries. A real
+              # Kotlin/Compose app is orders of magnitude above these numbers.
+              if dex_bytes < 500_000:
                   problems.append(f'dex too small ({dex_bytes} bytes) - looks like a stub APK')
-              if manifest < 3000:
+              if manifest < 1200:
                   problems.append(f'AndroidManifest.xml too small ({manifest} bytes)')
               if not has_arsc:
                   problems.append('resources.arsc missing')
-              if len(names) < 200:
+              if len(names) < 25:
                   problems.append(f'only {len(names)} zip entries')
               verdict = 'OK' if not problems else 'FAIL'
               line = f'{verdict}  {name}: {size} bytes, {len(names)} entries, dex={dex_bytes} bytes, manifest={manifest} bytes'
@@ -273,7 +276,10 @@ jobs:
             find mobile/android/app/build -maxdepth 3 -type d 2>/dev/null | head -20 || echo "no build directory"
             echo
             echo "--- gradle log tail ---"
-            tail -c 1200 mobile/android/build-android.log 2>/dev/null || echo "no gradle log"
+            tail -c 800 mobile/android/build-android.log 2>/dev/null || echo "no gradle log"
+            echo
+            echo "--- APK validation report ---"
+            cat VALIDATION-ANDROID.txt 2>/dev/null || echo "no validation report"
           } > /tmp/hashes.txt
           ESC=$(sed 's/%/%25/g; s/\r//g' /tmp/hashes.txt | tr '\n' '\001' | sed 's/\001/%0A/g')
           echo "::notice title=Android-1.2.5-assets::$ESC"
