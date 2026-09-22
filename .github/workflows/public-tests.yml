@@ -74,11 +74,21 @@ jobs:
         if: failure()
         run: |
           {
-            echo "=== playwright log (tail) ==="
-            tail -c 3000 playwright.log 2>/dev/null
+            echo "=== assertions that passed ==="
+            grep -c "^PASS" playwright.log 2>/dev/null || echo 0
+            grep "^PASS" playwright.log 2>/dev/null | tail -5
+            echo
+            echo "=== failing locator / error header ==="
+            grep -nE "locator|Timeout *[0-9]+ms exceeded|Call log|functional\.mjs:[0-9]+|^Error|Error:" playwright.log 2>/dev/null | head -25
+            echo
+            echo "=== first 1200 chars of the error block ==="
+            sed -n '/locator/,$p' playwright.log 2>/dev/null | head -c 1200
+            echo
+            echo "=== last 600 chars ==="
+            tail -c 600 playwright.log 2>/dev/null
             echo
             echo "=== dev server log (tail) ==="
-            tail -c 800 dev-server.log 2>/dev/null
+            tail -c 600 dev-server.log 2>/dev/null
           } > /tmp/web-diag.txt || true
           cat /tmp/web-diag.txt
           TAIL=$(cat /tmp/web-diag.txt | sed 's/%/%25/g; s/\r//g' | tr '\n' '\001' | sed 's/\001/%0A/g')
