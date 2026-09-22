@@ -137,6 +137,17 @@ jobs:
           sha256sum "Miyu-macOS-${ARCH}" "Miyu-macOS-${ARCH}.zip" deliverables/Miyu-Portable.html > SHA256SUMS-macOS.txt
           cat SHA256SUMS-macOS.txt
 
+      - name: Publish hashes and sizes as annotations
+        if: always()
+        run: |
+          {
+            ls -l Miyu-macOS-* 2>/dev/null || true
+            echo
+            cat SHA256SUMS-macOS.txt 2>/dev/null || echo "no checksums yet"
+          } > /tmp/macos-hashes.txt
+          ESC=$(sed 's/%/%25/g; s/\r//g' /tmp/macos-hashes.txt | tr '\n' '\001' | sed 's/\001/%0A/g')
+          echo "::notice title=macOS-1.2.5-assets::$ESC"
+
       - name: Compute release tag
         id: tag
         run: |

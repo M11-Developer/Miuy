@@ -75,3 +75,11 @@
 /* Mobile floating bubble styles (for web preview of mobile) */
 .miyu-bubble-preview{width:100px;height:100px;border-radius:50%;background:#fff5f5;display:grid;place-items:center;font-size:32px;box-shadow:0 4px 20px #0002;animation:breathe-orb 3s ease-in-out infinite}
 
+/* --- Sidebar layout hardening (1.2.5) ------------------------------------------------------------
+   The sidebar is a fixed flex column. In short viewports its children could shrink below their
+   real height, so neighbouring nav buttons overlapped and a click on one could land on another
+   (Playwright reported "element intercepts pointer events" in CI). Keep every sidebar child at its
+   intended size and let the sidebar scroll instead. */
+.sidebar{overflow-y:auto;overflow-x:hidden}
+.sidebar>*{flex-shrink:0}
+.nav-item{flex-shrink:0}
