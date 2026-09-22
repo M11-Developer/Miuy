@@ -15,6 +15,11 @@ const openNav=async(name,expectSelector)=>{const btn=page.locator(`[data-nav="${
 await page.goto('http://127.0.0.1:5173/');await page.waitForFunction(()=>window.miyuStatus?.().avatarReady);await page.waitForTimeout(350);
 expect(await page.evaluate(()=>window.miyuStatus())).toMatchObject({mode:'preview',cameraOn:false,micOn:false,avatarReady:true});pass('safe startup with no media capture');
 expect(network.length).toBe(0);pass('no external network on startup');
+// Miyu is Arabic-first, so the very first paint must be RTL. The rest of this file asserts English
+// copy, so switch the conversation language the way a user would and check the layout follows.
+expect(await page.evaluate(()=>document.documentElement.dir)).toBe('rtl');pass('Arabic-first startup is right-to-left');
+await page.locator('#profile-pill').click();await page.locator('#profile-age').selectOption('adult');await page.locator('#profile-language').selectOption('en');await page.locator('#profile-form button[type="submit"]').click();await page.waitForTimeout(300);
+expect(await page.evaluate(()=>document.documentElement.dir)).toBe('ltr');expect(await page.evaluate(()=>document.documentElement.lang)).toBe('en');pass('language switch flips the layout to left-to-right');
 await page.locator('[data-reaction="hello"]').click();await expect(page.locator('#mood-label')).toHaveText('Happy to see you');pass('voice reaction and animated greeting');
 await page.locator('#audio-button').click();expect(await page.evaluate(()=>window.miyuStatus().muted)).toBe(true);await page.locator('#audio-button').click();pass('master sound toggle');
 await page.locator('#chat-input').fill('Tell me about yourself');await page.locator('#chat-input').press('Enter');await page.waitForFunction(()=>window.miyuStatus().messages===3);await expect(page.locator('.message-bubble').last()).toContainText('scripted preview');pass('scripted conversation clearly labeled');
