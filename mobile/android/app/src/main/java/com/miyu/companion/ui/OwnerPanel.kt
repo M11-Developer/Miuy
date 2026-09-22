@@ -3,6 +3,7 @@ package com.miyu.companion.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
@@ -10,7 +11,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Spacer
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,6 +18,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -37,8 +39,8 @@ import javax.crypto.spec.PBEKeySpec
  *  - Public APKs contain MIYU_OWNER_BUILD=false and empty salt/hash, so the panel cannot be
  *    unlocked at all.
  *  - Unlocking also requires an 18+ profile to be selected.
- *  - Safety limits are never switchable, in owner builds too: no sexual content for minors, no
- *    self-harm encouragement, no dangerous/illegal instructions, no surveillance or theft, and
+ *  - Safety limits are never switchable, owner builds included: no sexual content for minors, no
+ *    self-harm encouragement, no dangerous or illegal instructions, no surveillance or theft, and
  *    Miyu never claims to be human.
  */
 object OwnerGate {
@@ -54,13 +56,14 @@ object OwnerGate {
         return try {
             val salt = hexToBytes(BuildConfig.MIYU_OWNER_SALT) ?: return false
             val expected = BuildConfig.MIYU_OWNER_HASH.lowercase()
+            if (expected.isEmpty()) return false
             val spec = PBEKeySpec(pin.toCharArray(), salt, ITERATIONS, KEY_LENGTH_BITS)
             val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
             val derived = factory.generateSecret(spec).encoded
             spec.clearPassword()
-            val computed = bytesToHex(derived)
-            constantTimeEquals(computed, expected)
+            constantTimeEquals(bytesToHex(derived), expected)
         } catch (e: Exception) {
+            // Never log the PIN or the derived key.
             false
         }
     }
@@ -91,16 +94,15 @@ object OwnerGate {
 
     fun buildId(): String = BuildConfig.MIYU_BUILD_ID
 
-    fun sha256Of(value: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
-        return bytesToHex(digest)
-    }
+    /** Non-sensitive helper used by diagnostics (never applied to user data). */
+    fun sha256Of(value: String): String =
+        bytesToHex(MessageDigest.getInstance("SHA-256").digest(value.toByteArray()))
 }
 
 @Composable
 fun OwnerPanelCard(isAdultProfile: Boolean) {
     if (!OwnerGate.isOwnerBuild()) {
-        // Public build: the panel is intentionally absent, not merely hidden.
+        // Public build: the panel is intentionally absent, not merely hidden behind a flag.
         return
     }
 
@@ -109,9 +111,9 @@ fun OwnerPanelCard(isAdultProfile: Boolean) {
     var message by remember { mutableStateOf("") }
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-        Column(Modifier2.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Owner Panel 🔐 (خاص)", fontWeight = FontWeight.Bold)
-            Text("نسخة المالك فقط. لا يوجد PIN داخل التطبيق ولا يُخزَّن على الجهاز.", fontSize = 11.sp)
+            Text("نسخة المالك فقط. الـ PIN غير موجود داخل التطبيق ولا يُخزَّن على الجهاز.", fontSize = 11.sp)
 
             if (!isAdultProfile) {
                 Text(
@@ -129,42 +131,45 @@ fun OwnerPanelCard(isAdultProfile: Boolean) {
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true
                 )
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(onClick = {
-                        message = if (!isAdultProfile) {
-                            "اختر 18+ أولاً"
-                        } else if (OwnerGate.verify(pin)) {
-                            unlocked = true
-                            pin = ""
-                            "تم الفتح"
-                        } else {
-                            "PIN غير صحيح"
+                        message = when {
+                            !isAdultProfile -> "اختر 18+ أولاً"
+                            OwnerGate.verify(pin) -> {
+                                unlocked = true
+                                pin = ""
+                                "تم الفتح"
+                            }
+                            else -> "PIN غير صحيح"
                         }
                     }) { Text("فتح") }
-                    Spacer(Modifier2.width(8.dp))
-                    TextButton(onClick = { pin = ""; message = "" }) { Text("تفريغ") }
-                    Spacer(Modifier2.width(8.dp))
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = {
+                        pin = ""
+                        message = ""
+                    }) { Text("تفريغ") }
+                    Spacer(Modifier.width(8.dp))
                     Text(message, fontSize = 11.sp)
                 }
             } else {
                 Text("Owner Lab", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text("• مكتبة الألعاب التجريبية (تجارب محلية فقط)", fontSize = 11.sp)
-                Text("• التشخيصات وحالة الخدمة والبناء: ${OwnerGate.buildId()}", fontSize = 11.sp)
+                Text("• التشخيصات وحالة الخدمة · Build: ${OwnerGate.buildId()}", fontSize = 11.sp)
                 Text("• ضبط الفلاتر ومستوى الوقاية", fontSize = 11.sp)
-                Text("• تحكم الصوت Full duplex (بإذن الميكروفون)", fontSize = 11.sp)
+                Text("• تحكم الصوت Full duplex (بإذن الميكروفون فقط)", fontSize = 11.sp)
                 Text("• تصدير إعدادات غير حساسة فقط", fontSize = 11.sp)
                 Text("• قفل اللوحة", fontSize = 11.sp)
                 Text(
                     "حدود الأمان لا يمكن إيقافها: لا محتوى جنسي للقاصرين، لا تشجيع على إيذاء النفس، " +
-                        "لا تعليمات خطرة أو غير قانونية، لا مراقبة أو سرقة، Miyu لا تدّعي أنها إنسان.",
+                        "لا تعليمات خطرة أو غير قانونية، لا مراقبة أو سرقة، و Miyu لا تدّعي أنها إنسان.",
                     fontSize = 10.sp
                 )
                 Button(onClick = { unlocked = false }) { Text("قفل اللوحة") }
             }
-            Text("هذه اللوحة تعمل فقط على البناء الخاص عند إدخال PIN صحيح مع عمر 18+.", fontSize = 10.sp)
+            Text(
+                "هذه اللوحة تعمل فقط على البناء الخاص عند إدخال PIN صحيح مع تحديد عمر 18+.",
+                fontSize = 10.sp
+            )
         }
     }
 }
-
-/** Tiny alias so this file does not shadow the Compose modifier import in callers. */
-private object Modifier2
