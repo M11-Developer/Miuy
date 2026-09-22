@@ -21,3 +21,7 @@ Miyu-Portable.html
 AppDir/
 deb/
 .miyu/
+
+# Test-run outputs (screenshots and the JSON summary the Playwright suite writes)
+tests/results.json
+tests/*.png
