@@ -54,6 +54,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config xvfb || true
+          # libfuse2 is what appimagetool needs to run its own AppImage wrapper
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64 || echo "no libfuse2 package on this image"
           sudo apt-get install -y libwebkit2gtk-4.0-dev || echo "webkit2gtk-4.0-dev not available on this image"
           sudo apt-get install -y libwebkit2gtk-4.1-dev || echo "webkit2gtk-4.1-dev not available on this image"
           pkg-config --modversion gtk+-3.0 || true
@@ -128,7 +130,21 @@ jobs:
             wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool || \
               curl -fsSL -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
             chmod +x appimagetool
-            ./appimagetool AppDir "Miyu-Linux-${ARCH}.AppImage" || sudo ./appimagetool AppDir "Miyu-Linux-${ARCH}.AppImage"
+            export ARCH=x86_64
+            set +e
+            ./appimagetool --no-appstream AppDir "Miyu-Linux-${ARCH}.AppImage" 2>&1 | tee appimagetool.log
+            RC=${PIPESTATUS[0]}
+            if [ "$RC" -ne 0 ]; then
+              echo "appimagetool failed (rc=$RC), retrying with APPIMAGE_EXTRACT_AND_RUN=1 (no FUSE needed)"
+              APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool --no-appstream AppDir "Miyu-Linux-${ARCH}.AppImage" 2>&1 | tee -a appimagetool.log
+              RC=${PIPESTATUS[0]}
+            fi
+            if [ "$RC" -ne 0 ]; then
+              echo "appimagetool.log:"; cat appimagetool.log
+              echo "::error::appimagetool could not build an AppImage (rc=$RC)"
+              exit 1
+            fi
+            set -e
           else
             echo "Skipping appimagetool on arm64 (no official tool binary); the .deb and the raw binary are published instead."
           fi
@@ -176,6 +192,20 @@ jobs:
           dpkg-deb --build deb "Miyu-Linux-${ARCH}.deb"
           dpkg-deb --info "Miyu-Linux-${ARCH}.deb" | head -15
           ls -lh *.deb
+
+      - name: Dump diagnostics if anything above failed
+        if: failure()
+        run: |
+          {
+            echo "=== appimagetool.log ==="
+            tail -c 1500 appimagetool.log 2>/dev/null
+            echo
+            echo "=== desktop/build.log ==="
+            tail -c 1500 desktop/build.log 2>/dev/null || tail -c 1500 build.log 2>/dev/null
+          } > /tmp/diag.txt
+          TAIL=$(cat /tmp/diag.txt | sed 's/%/%25/g; s/\r//g' | tr '\n' '\001' | sed 's/\001/%0A/g')
+          echo "::error title=linux-build-diagnostics::$TAIL"
+          cat /tmp/diag.txt
 
       - name: Verification report
         run: |

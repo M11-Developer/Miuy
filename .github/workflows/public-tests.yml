@@ -61,12 +61,28 @@ jobs:
           echo
 
       - name: Functional tests (camera/mic consent, memory, focus, provider safety, offline portable)
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee playwright.log
 
       - name: Go tests for the local bridge (same code as the desktop app)
         run: |
           cd desktop
           go test -v ./... | tee ../go-tests.log
+
+      - name: Dump diagnostics if the suite failed
+        if: failure()
+        run: |
+          {
+            echo "=== playwright log (tail) ==="
+            tail -c 3000 playwright.log 2>/dev/null
+            echo
+            echo "=== dev server log (tail) ==="
+            tail -c 800 dev-server.log 2>/dev/null
+          } > /tmp/web-diag.txt || true
+          cat /tmp/web-diag.txt
+          TAIL=$(cat /tmp/web-diag.txt | sed 's/%/%25/g; s/\r//g' | tr '\n' '\001' | sed 's/\001/%0A/g')
+          echo "::error title=web-test-diagnostics::$TAIL"
 
       - name: Test report
         if: always()
@@ -101,6 +117,7 @@ jobs:
             tests/results.json
             portable-sha256.txt
             go-tests.log
+            playwright.log
           if-no-files-found: warn
           retention-days: 30
 
@@ -181,10 +198,17 @@ jobs:
           fi
           echo "PBKDF2-SHA256 output looks correct (32-byte salt, 32-byte hash, no plaintext PIN)."
 
-      - name: Owner verification logic (correct PIN, wrong PIN, public build disabled)
+      - name: Owner verification logic compiles for the Windows target
+        # The owner tests themselves are executed by the windows-native-tests job, where the whole
+        # desktop module can be built. Here we only prove the owner code type-checks, without
+        # needing GTK/WebKitGTK headers on this runner.
         run: |
           cd desktop
-          go test -v -run "Owner|PBKDF2" ./...
+          go mod tidy
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o /tmp/miyu-windows-probe.exe .
+          ls -l /tmp/miyu-windows-probe.exe
+          echo "Owner PIN code type-checks and builds for Windows; execution happens in windows-native-tests." 
 
       - name: Repository hygiene (no secrets, no keystores, no owner artefacts committed)
         run: |
