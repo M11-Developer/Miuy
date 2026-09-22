@@ -1,7 +1,5 @@
 package com.miyu.companion.data
 
-import kotlinx.serialization.Serializable
-
 enum class AgeProfile(val displayAr: String, val displayEn: String, val minAge: Int, val maxAge: Int) {
     CHILD_3_5("٣-٥ سنوات · لعب آمن", "3-5 years · gentle play", 3, 5),
     CHILD_6_8("٦-٨ سنوات · لعب آمن", "6-8 years · gentle play", 6, 8),
@@ -39,7 +37,6 @@ enum class ToyType(val key: String, val labelEn: String, val labelAr: String, va
     }
 }
 
-@Serializable
 data class FloatingPosition(
     val x: Float = 0.85f,
     val y: Float = 0.3f,
@@ -48,10 +45,12 @@ data class FloatingPosition(
     val snapToEdge: Boolean = true,
     val isMini: Boolean = false,
     val isHidden: Boolean = false,
-    val clickThrough: Boolean = false
+    val clickThrough: Boolean = false,
+    // "Stop motion": freezes breathing / blinking / toy animation for calm play
+    // and for users who prefer reduced motion.
+    val motionPaused: Boolean = false
 )
 
-@Serializable
 data class MiyuState(
     val age: Int? = null,
     val language: String = "ar",
@@ -67,5 +66,5 @@ data class MiyuState(
 data class OwnerConfig(
     val isOwnerBuild: Boolean = false,
     val buildId: String = "",
-    val version: String = "1.2.0"
+    val version: String = "1.2.5"
 )

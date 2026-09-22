@@ -1,8 +1,8 @@
 {
   "name": "miyu-companion",
-  "version": "1.2.0",
+  "version": "1.2.5",
   "private": true,
-  "description": "Miyu — an animated desktop companion with local-first privacy and optional model connections. Native Desktop primary, Mobile native, Portable fallback.",
+  "description": "Miyu — an animated multi-platform companion (Windows / Linux / macOS native, Android native, iOS companion, portable HTML fallback) with local-first privacy and optional model connections.",
   "author": "Miyu Studio",
   "license": "UNLICENSED",
   "scripts": {
@@ -11,10 +11,11 @@
     "build:portable": "node tools/build-portable.mjs",
     "test": "node tests/functional.mjs",
     "test:proxy": "cd desktop && go test -v .",
+    "test:all": "npm run test:proxy && npm test",
     "package:win": "node tools/build-portable.mjs && cd desktop && go run ./resourcegen && go build -trimpath -ldflags=\"-s -w -H windowsgui\" -o ../deliverables/Miyu.exe .",
     "build:linux": "npm run build && npm run build:portable && cd desktop && go build -trimpath -ldflags=\"-s -w\" -o ../Miyu-Linux-x86_64 .",
-    "build:all": "npm ci && npm run build && npm run build:portable",
-    "test:all": "npm run test:proxy && npm test"
+    "build:mac": "npm run build && npm run build:portable && cd desktop && go build -trimpath -ldflags=\"-s -w\" -o ../Miyu-macOS .",
+    "build:all": "npm ci && npm run build && npm run build:portable"
   },
   "dependencies": {
     "lucide": "^0.468.0"

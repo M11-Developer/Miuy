@@ -6,7 +6,7 @@ on:
     paths:
       - 'mobile/android/**'
       - 'shared/**'
-      - 'app/**'
+      - 'RELEASE-NOTES-1.2.5.md'
       - '.github/workflows/public-android-release.yml'
   workflow_dispatch:
 
@@ -18,155 +18,292 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Node for shared core
+      - name: Setup Node (for the shared portable core)
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      - name: Setup Android SDK (with retry)
-        id: android-sdk
-        continue-on-error: true
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle (provides the gradle binary used to generate the wrapper)
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
 
-      - name: Install Android SDK manually if setup-android failed
-        if: steps.android-sdk.outcome == 'failure'
+      - name: Setup Android SDK (cmdline-tools 11076708 with retry, license accept, packages)
         run: |
-          echo "Manual Android SDK install fallback"
-          mkdir -p $HOME/android-sdk/cmdline-tools
-          cd $HOME/android-sdk
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip || curl -L -o cmdline.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q cmdline.zip
-          mkdir -p cmdline-tools/latest
-          mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
-          mv cmdline/* cmdline-tools/latest/ 2>/dev/null || true
-          mv latest/* cmdline-tools/latest/ 2>/dev/null || true
-          ls -R cmdline-tools/latest | head -n 50
-          export ANDROID_SDK_ROOT=$HOME/android-sdk
-          export ANDROID_HOME=$HOME/android-sdk
-          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" || true
-          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
-          echo "$HOME/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
+          set -uo pipefail
+          SDK=""
+          for candidate in "${ANDROID_SDK_ROOT:-}" "${ANDROID_HOME:-}" /usr/local/lib/android/sdk "$HOME/android-sdk"; do
+            if [ -n "${candidate}" ] && [ -x "$candidate/cmdline-tools/latest/bin/sdkmanager" ]; then
+              SDK="$candidate"
+              echo "Reusing SDK with sdkmanager at: $SDK"
+              break
+            fi
+          done
 
-      - name: Show Android SDK
+          if [ -z "$SDK" ]; then
+            SDK="$HOME/android-sdk"
+            echo "No usable sdkmanager found - installing cmdline-tools 11076708 into $SDK"
+            mkdir -p "$SDK/cmdline-tools"
+            rm -f /tmp/cmdline-tools.zip
+            for attempt in 1 2 3; do
+              echo "download attempt $attempt"
+              curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 20 \
+                -o /tmp/cmdline-tools.zip \
+                https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip && break
+              wget -q --timeout=30 -O /tmp/cmdline-tools.zip \
+                https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip && break
+              sleep 10
+            done
+            if [ ! -s /tmp/cmdline-tools.zip ]; then
+              echo "::error::Could not download Android command line tools"
+              exit 1
+            fi
+            rm -rf /tmp/cmdline-unpack && mkdir -p /tmp/cmdline-unpack
+            unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-unpack
+            rm -rf "$SDK/cmdline-tools/latest"
+            mkdir -p "$SDK/cmdline-tools/latest"
+            mv /tmp/cmdline-unpack/cmdline-tools/* "$SDK/cmdline-tools/latest/"
+            chmod +x "$SDK/cmdline-tools/latest/bin/"* || true
+          fi
+
+          export ANDROID_SDK_ROOT="$SDK"
+          export ANDROID_HOME="$SDK"
+          export PATH="$SDK/cmdline-tools/latest/bin:$SDK/platform-tools:$PATH"
+          echo "sdkmanager version: $(sdkmanager --version 2>&1 | tail -1)"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" 2>&1 | tail -n 25 || true
+          echo "--- installed packages ---"
+          sdkmanager --list_installed 2>/dev/null | head -n 30 || true
+          echo "--- android jar present? ---"
+          ls -l "$SDK/platforms/android-34/android.jar" || { echo "::error::platforms;android-34 is missing"; exit 1; }
+          ls -l "$SDK/build-tools/34.0.0/aapt2" || echo "aapt2 not found (verification falls back to python)"
+
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          {
+            echo "$SDK/cmdline-tools/latest/bin"
+            echo "$SDK/platform-tools"
+            echo "$SDK/build-tools/34.0.0"
+          } >> "$GITHUB_PATH"
+
+      - name: npm ci and build the portable shared core
         run: |
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          which sdkmanager || echo "sdkmanager not in PATH"
-          sdkmanager --list_installed || true
-          ls -lh $HOME/android-sdk || true
+          npm ci
+          npm run build:portable
+          ls -l deliverables/Miyu-Portable.html
 
-      - name: Build Debug APK
+      - name: Generate Gradle wrapper 8.7
         working-directory: mobile/android
         run: |
-          chmod +x gradlew || echo "no gradlew, generating"
           if [ ! -f gradlew ]; then
-            mkdir -p gradle/wrapper
-            cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
-          networkTimeout=10000
-          validateDistributionUrl=true
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
-            wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip -O /tmp/gradle.zip || curl -L -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.5-bin.zip
-            unzip -q /tmp/gradle.zip -d /tmp/
-            /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5 || true
-            chmod +x gradlew
+            gradle wrapper --gradle-version 8.7 --distribution-type bin
           fi
-          ls -lh
-          ./gradlew assembleDebug --stacktrace --info 2>&1 | tee build.log
-          echo "=== BUILD LOG TAIL ==="
-          tail -n 200 build.log
-          ls -lh app/build/outputs/apk/debug/ || true
+          chmod +x gradlew
+          ls -l gradlew gradle/wrapper/ || true
+          ./gradlew --version
 
-      - name: Build Release AAB
+      - name: Prepare a deterministic CI signing key (no secret lives in the repo)
+        run: |
+          KEYSTORE="$HOME/.android/debug.keystore"
+          mkdir -p "$(dirname "$KEYSTORE")"
+          if [ ! -f "$KEYSTORE" ]; then
+            keytool -genkeypair -v -keystore "$KEYSTORE" -storetype PKCS12 \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug, O=Miyu Public CI, C=EG"
+          fi
+          {
+            echo "MIYU_CI_KEYSTORE=$KEYSTORE"
+            echo "MIYU_CI_KEYSTORE_PASSWORD=android"
+            echo "MIYU_CI_KEY_ALIAS=androiddebugkey"
+            echo "MIYU_CI_KEY_PASSWORD=android"
+          } >> "$GITHUB_ENV"
+          keytool -exportcert -keystore "$KEYSTORE" -alias androiddebugkey -storepass android -rfc -file Miyu-Android-certificate.pem
+          keytool -list -v -keystore "$KEYSTORE" -storepass android -alias androiddebugkey | grep -E "SHA256|SHA1" || true
+          echo "Certificate exported. The same public CI key is used for every Miyu public APK so releases upgrade over each other."
+
+      - name: JVM unit tests (Play Lab, age profiles, bubble safety defaults)
         working-directory: mobile/android
-        continue-on-error: true
-        run: |
-          ./gradlew bundleRelease --stacktrace 2>&1 | tee bundle.log || echo "bundle build failed"
-          tail -n 100 bundle.log || true
-          ls -lh app/build/outputs/bundle/release/ || true
+        run: ./gradlew testDebugUnitTest --stacktrace
 
-      - name: Create deliverables
-        if: always()
+      - name: Build debug APK, release APK and release AAB
+        working-directory: mobile/android
         run: |
-          mkdir -p deliverables-android/
-          if [ -f mobile/android/app/build/outputs/apk/debug/app-debug.apk ]; then
-            cp mobile/android/app/build/outputs/apk/debug/*.apk deliverables-android/ || true
-          fi
-          if [ -f mobile/android/app/build/outputs/bundle/release/app-release.aab ]; then
-            cp mobile/android/app/build/outputs/bundle/release/*.aab deliverables-android/ || true
-          fi
-          # If no APK, create placeholder with instructions
-          if [ ! -f deliverables-android/app-debug.apk ] && [ ! -f deliverables-android/*.apk ]; then
-            echo "Android build failed - see README-Android.md for manual build" > deliverables-android/README-BUILD-FAILED.txt
-            echo "This placeholder is created when SDK/Gradle fails in CI. Real APK can be built locally with Android Studio." >> deliverables-android/README-BUILD-FAILED.txt
-            cat deliverables-android/README-BUILD-FAILED.txt
-          fi
-          ls -R deliverables-android/ || true
-          ls -R mobile/android/app/build/outputs/ || true
+          ./gradlew assembleDebug assembleRelease bundleRelease --stacktrace 2>&1 | tee build-android.log
+          echo "=== outputs ==="
+          find app/build/outputs -type f \( -name "*.apk" -o -name "*.aab" \) -printf '%p  %s bytes\n' | sort
 
-      - name: SHA256
+      - name: Verify the APKs are real builds (anti-stub gate)
         run: |
-          find deliverables-android mobile/android/app/build/outputs -type f \( -name "*.apk" -o -name "*.aab" \) 2>/dev/null | xargs sha256sum > SHA256SUMS-Android.txt 2>/dev/null || echo "no apk/aab yet - placeholder" > SHA256SUMS-Android.txt
-          cat SHA256SUMS-Android.txt
-          if [ -f deliverables/Miyu-Portable.html ]; then
-            sha256sum deliverables/Miyu-Portable.html >> SHA256SUMS-Android.txt || true
-          fi
-          cat SHA256SUMS-Android.txt
+          python3 - <<'PY'
+          import sys, zipfile, glob, hashlib, os
 
-      - name: Upload APK artifact
+          candidates = sorted(glob.glob('mobile/android/app/build/outputs/apk/*/*.apk'))
+          if not candidates:
+              print('::error::No APK files were produced at all')
+              sys.exit(1)
+
+          ok = 0
+          report = []
+          for apk in candidates:
+              name = os.path.basename(apk)
+              size = os.path.getsize(apk)
+              z = zipfile.ZipFile(apk)
+              names = z.namelist()
+              dexes = [n for n in names if n.endswith('.dex')]
+              dex_bytes = sum(z.getinfo(n).file_size for n in dexes)
+              header = z.read(dexes[0])[:8] if dexes else b''
+              manifest = z.getinfo('AndroidManifest.xml').file_size if 'AndroidManifest.xml' in names else 0
+              has_arsc = 'resources.arsc' in names
+              problems = []
+              if not dexes:
+                  problems.append('no classes.dex')
+              if header[:4] != b'dex\n':
+                  problems.append(f'bad dex magic {header[:4]!r}')
+              if dex_bytes < 1_000_000:
+                  problems.append(f'dex too small ({dex_bytes} bytes) - looks like a stub APK')
+              if manifest < 3000:
+                  problems.append(f'AndroidManifest.xml too small ({manifest} bytes)')
+              if not has_arsc:
+                  problems.append('resources.arsc missing')
+              if len(names) < 200:
+                  problems.append(f'only {len(names)} zip entries')
+              verdict = 'OK' if not problems else 'FAIL'
+              line = f'{verdict}  {name}: {size} bytes, {len(names)} entries, dex={dex_bytes} bytes, manifest={manifest} bytes'
+              print(line)
+              report.append(line + (' :: ' + '; '.join(problems) if problems else ''))
+              if not problems:
+                  ok += 1
+          open('VALIDATION-ANDROID.txt', 'w').write(
+              'Miyu Android APK validation (anti-stub gate)\n'
+              'Checks: dex magic, total dex size > 1 MB, real binary AndroidManifest.xml, resources.arsc, > 200 entries\n\n'
+              + '\n'.join(report) + '\n')
+          if ok == 0:
+              print('::error::Every APK failed the anti-stub checks - refusing to publish')
+              sys.exit(1)
+          print(f'{ok} APK(s) passed')
+          PY
+          echo "--- badging (proves package + version) ---"
+          APK=$(ls mobile/android/app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          [ -z "$APK" ] && APK=$(ls mobile/android/app/build/outputs/apk/debug/*.apk | head -1)
+          (aapt dump badging "$APK" | head -n 5) || (aapt2 dump badging "$APK" | head -n 5) || echo "aapt not available - python checks above already passed"
+          cat VALIDATION-ANDROID.txt
+
+      - name: Assemble Android deliverables
+        run: |
+          mkdir -p deliverables-android
+          REL=$(ls mobile/android/app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          DBG=$(ls mobile/android/app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)
+          AAB=$(ls mobile/android/app/build/outputs/bundle/release/*.aab 2>/dev/null | head -1)
+          [ -n "$REL" ] && cp "$REL" deliverables-android/Miyu-Android-1.2.5.apk
+          [ -n "$DBG" ] && cp "$DBG" deliverables-android/Miyu-Android-1.2.5-debug.apk
+          [ -n "$AAB" ] && cp "$AAB" deliverables-android/Miyu-Android-1.2.5.aab
+          cp deliverables/Miyu-Portable.html deliverables-android/Miyu-Portable.html
+          cp README-Android.md deliverables-android/ 2>/dev/null || true
+          cp RELEASE-NOTES-1.2.5.md deliverables-android/ 2>/dev/null || true
+          cp CHANGES-1.2.5.txt deliverables-android/ 2>/dev/null || true
+          cp FINAL-1.2.5.txt deliverables-android/ 2>/dev/null || true
+          cp LICENSE deliverables-android/LICENSE.txt 2>/dev/null || true
+          cp VALIDATION-ANDROID.txt deliverables-android/ 2>/dev/null || true
+          cp Miyu-Android-certificate.pem deliverables-android/ 2>/dev/null || true
+          cp mobile/android/app/src/main/AndroidManifest.xml deliverables-android/AndroidManifest.xml 2>/dev/null || true
+          if [ ! -f deliverables-android/Miyu-Android-1.2.5.apk ] && [ ! -f deliverables-android/Miyu-Android-1.2.5.aab ]; then
+            echo "::error::No APK and no AAB produced - not creating a release without assets."
+            exit 1
+          fi
+          ls -l deliverables-android
+
+      - name: SHA256SUMS.txt
+        run: |
+          cd deliverables-android
+          rm -f SHA256SUMS.txt
+          for f in *; do
+            [ "$f" = "SHA256SUMS.txt" ] && continue
+            [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS.txt
+          done
+          cat SHA256SUMS.txt
+
+      - name: Compute release tag
+        id: tag
+        run: |
+          BASE="v1.2.5-android-${GITHUB_RUN_NUMBER}"
+          TAG="$BASE"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "refs/tags/$TAG"; then
+            TAG="$BASE-${GITHUB_RUN_ATTEMPT}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag will be: $TAG"
+
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Miyu-Android
+          name: Miyu-Android-Public
           path: |
-            mobile/android/app/build/outputs/apk/debug/*.apk
-            mobile/android/app/build/outputs/bundle/release/*.aab
             deliverables-android/
-            SHA256SUMS-Android.txt
-            README-Android.md
-            mobile/android/app/src/main/AndroidManifest.xml
-            mobile/android/app/build/outputs/apk/debug/build.log
-          if-no-files-found: warn
-
-      - name: Release
-        if: success() || failure()
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            mobile/android/app/build/outputs/apk/debug/*.apk
+            VALIDATION-ANDROID.txt
             mobile/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release v1.2.5 (Android)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Miyu Android Public v1.2.5 (${{ steps.tag.outputs.tag }})
+          fail_on_unmatched_files: true
+          files: |
             deliverables-android/*
-            SHA256SUMS-Android.txt
-            README-Android.md
-          tag_name: v1.2.0-android-${{ github.run_number }}
-          name: Miyu Android Public v1.2.0
           body: |
-            Public Android Release
-            - Floating Companion with SYSTEM_ALERT_WINDOW (explicit permission)
-            - Foreground service with persistent notification + stop button
-            - Bubble: drag, resize, transparency, snap to edges, mini, click-through, hide/show
-            - Toy overlay with animation
-            - Play Lab Arabic/English, Age Profiles, Vodafone Cash support card
-            - APK for testing, AAB for Play Store
-            - Built from ${{ github.sha }}
-            - Security: No reading other apps, no keylogging, no surveillance, no auto-click
-            - Overlay permission must be granted explicitly by user, never auto-enabled
-            - If APK not built, see artifact and README-Android.md for local build steps
-          draft: false
-          prerelease: false
+            ## Miyu for Android — v1.2.5 (native Kotlin + Jetpack Compose)
+
+            Built on a GitHub-hosted `ubuntu-latest` runner from commit `${{ github.sha }}`:
+            Android SDK cmdline-tools 11076708, `platforms;android-34`, `build-tools;34.0.0`,
+            Gradle 8.7, AGP 8.5.2, Kotlin 2.0.21 with the official Compose compiler plugin.
+
+            ### Files
+            | File | What it is |
+            | --- | --- |
+            | `Miyu-Android-1.2.5.apk` | **Install this one.** Release build (not debuggable), signed with the public Miyu CI key, upgradeable across releases. |
+            | `Miyu-Android-1.2.5-debug.apk` | Debug build for troubleshooting (same signing key). |
+            | `Miyu-Android-1.2.5.aab` | Android App Bundle for the Play Store (uploaded unsigned; Play re-signs it). |
+            | `Miyu-Portable.html` | The shared portable core, included for reference/desktop testing. |
+            | `VALIDATION-ANDROID.txt` | Anti-stub proof: dex magic, dex size, manifest size, resource table, entry count per APK. |
+            | `Miyu-Android-certificate.pem` | The public CI signing certificate, so you can verify the APK yourself. |
+            | `SHA256SUMS.txt` | SHA-256 for every file above. |
+            | `README-Android.md`, `RELEASE-NOTES-1.2.5.md`, `CHANGES-1.2.5.txt`, `FINAL-1.2.5.txt` | Documentation for this build. |
+
+            ### What is really inside this APK
+            - Kotlin + Jetpack Compose app (`com.miyu.companion`), `minSdk 26`, `targetSdk 34`, `versionName 1.2.5`, `versionCode 15`
+            - `FloatingCompanionService`: a foreground service with `foregroundServiceType="specialUse"`, a persistent notification and Stop / Hide / Controls buttons
+            - `FloatingBubbleView`: Compose bubble drawn in a `TYPE_APPLICATION_OVERLAY` window
+              - drag, resize (0.5x–1.5x), transparency, snap-to-edge with animation, mini mode, hide
+              - click-through mode (`FLAG_NOT_TOUCHABLE`, opt-in), stop-motion switch (freezes breathing/blinking/toy animation)
+              - idle breathing, eye blink, toy overlay + Arabic speech bubble when a toy is grabbed
+              - status-bar/notch and navigation-bar aware placement, portrait and landscape safe
+            - `SYSTEM_ALERT_WINDOW` is requested **explicitly** through system settings, never granted silently
+            - Age profiles 3-5 / 6-8 / 9-12 (guardian confirmation) / 13-17 / 18+, kindness (respect) meter, mood
+            - Play Lab in Arabic and English: “امسكي عربية لعبة” / “Hold a toy car” → 9 base toys (car, ball, teddy, book, rocket, flower, puzzle, balloon, musical) drawn as local emoji/vector art — no image generation service, nothing leaves the device
+            - Quick Settings tile, share-sheet target for text, DataStore-backed local settings
+            - Vodafone Cash support card (01027653109) is copy-only: no payment API, no wallet PIN, nothing logged
+
+            ### What this app never does
+            It does not read other apps, does not log keystrokes or passwords, does not monitor the screen,
+            does not auto-click inside other apps, does not record audio or use the camera in the background,
+            and it never runs hidden — the floating companion always shows its notification.
+
+            ### Install
+            1. Download `Miyu-Android-1.2.5.apk` on the phone (Android 8.0+).
+            2. Android will ask you to allow installing from this source — that is the OS protecting you, confirm it yourself.
+            3. Open Miyu, then grant “Display over other apps” from the in-app button. Nothing floats before you allow it.
+            4. Battery optimisation: to keep the bubble alive on aggressive vendors, allow Miyu to run in the background.
+
+            Verify: `sha256sum Miyu-Android-1.2.5.apk` against `SHA256SUMS.txt`.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}

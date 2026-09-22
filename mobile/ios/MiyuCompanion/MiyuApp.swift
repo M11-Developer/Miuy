@@ -12,6 +12,9 @@ struct MiyuApp: App {
 struct ContentView: View {
     @StateObject private var viewModel = MiyuViewModel()
     @State private var showingPiP = false
+    // Text handed over from the Share Sheet extension through the miyu:// URL scheme.
+    @State private var sharedText: String?
+    @State private var notificationsReady = false
     
     var body: some View {
         NavigationView {
@@ -83,6 +86,35 @@ struct ContentView: View {
                         }
                     }
                     
+                    // Share Sheet (send Miyu state out, receive text from other apps)
+                    CardView(title: "Share Sheet") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("شاركي حالة Miyu، أو أرسلي نصاً إليها من أي تطبيق عبر زر المشاركة.")
+                                .font(.caption)
+                            ShareLink(item: "Miyu حاليًا: \(viewModel.currentToy?.emoji ?? "🌸") — a little company, a little magic") {
+                                Label("مشاركة حالة Miyu", systemImage: "square.and.arrow.up")
+                            }
+                            if let sharedText {
+                                Text("وصل من تطبيق آخر: \(sharedText)")
+                                    .font(.caption2)
+                            }
+                        }
+                    }
+
+                    // Interactive notifications
+                    CardView(title: "إشعارات تفاعلية") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Miyu يمكنها تذكيرك بلطف (تركيز، راحة، لعبة) بأزرار داخل الإشعار نفسه. كل شيء محلي على الجهاز.")
+                                .font(.caption)
+                            Button(notificationsReady ? "الإشعارات مسموحة ✅" : "تفعيل الإشعارات") {
+                                MiyuNotifications.registerCategories()
+                                MiyuNotifications.requestAuthorizationIfNeeded { granted in
+                                    DispatchQueue.main.async { notificationsReady = granted }
+                                }
+                            }.buttonStyle(.bordered)
+                        }
+                    }
+
                     // Support
                     SupportCard()
                 }
@@ -92,6 +124,21 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingPiP) {
             PiPView()
+        }
+        .onOpenURL { url in
+            // miyu://share?text=... arrives from the Share Sheet extension.
+            guard url.scheme == "miyu", url.host == "share" else { return }
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            if let text = components?.queryItems?.first(where: { $0.name == "text" })?.value {
+                sharedText = text
+                viewModel.handleToyInput(text)
+            }
+        }
+        .task {
+            MiyuNotifications.registerCategories()
+            MiyuNotifications.requestAuthorizationIfNeeded { granted in
+                DispatchQueue.main.async { notificationsReady = granted }
+            }
         }
     }
 }

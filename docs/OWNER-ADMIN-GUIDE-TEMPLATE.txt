@@ -70,7 +70,7 @@ MIYU_OWNER_PIN=mysecretpin go run ./tools/gen-owner-hash.go
 # Then build with ldflags:
 cd desktop
 go run ./resourcegen
-go build -trimpath -ldflags="-s -w -H windowsgui -X main.ownerSalt=<salt> -X main.ownerHash=<hash> -X main.ownerBuildID=owner-local -X main.AppVersion=1.2.0-owner" -o ../Miyu-Owner.exe .
+go build -trimpath -ldflags="-s -w -H windowsgui -X main.ownerSalt=<salt> -X main.ownerHash=<hash> -X main.ownerBuildID=owner-local -X main.AppVersion=1.2.5-owner" -o ../Miyu-Owner.exe .
 
 For Android Owner:
 cd mobile/android
@@ -89,5 +89,5 @@ Do NOT:
 - Use Owner secret in public workflow
 - Claim Release done if not in GitHub Releases with Assets
 
-Version: 1.2.0-owner
+Version: 1.2.5-owner
 Template generated: 2026-09-21

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Miyu palette: warm pink bubble on a soft cream background -->
+    <color name="miyu_icon_background">#FFF5F5</color>
+    <color name="miyu_blush">#FFB7C5</color>
+    <color name="miyu_ink">#8A5F62</color>
+    <color name="miyu_primary">#E8879B</color>
+</resources>

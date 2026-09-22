@@ -1,0 +1,96 @@
+name: MiyuCompanion
+options:
+  bundleIdPrefix: app.miyu
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "16.1"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.2.5"
+    CURRENT_PROJECT_VERSION: "15"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    SWIFT_EMIT_LOC_STRINGS: YES
+targets:
+  MiyuCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: MiyuCompanion
+        excludes:
+          - "Widgets/**"
+    dependencies:
+      - target: MiyuWidgets
+        embed: true
+        codeSign: false
+      - target: MiyuShare
+        embed: true
+        codeSign: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.miyu.companion
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: MiyuCompanion/Info.plist
+      properties:
+        CFBundleDisplayName: Miyu
+        CFBundleShortVersionString: "1.2.5"
+        CFBundleVersion: "15"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIUserInterfaceStyle: Automatic
+        NSMicrophoneUsageDescription: "Miyu يستخدم الميكروفون فقط عندما تضغطي زر الميكروفون. لا تسجيل في الخلفية."
+        NSCameraUsageDescription: "Miyu يستخدم الكاميرا فقط عندما تضغطي زر الكاميرا، والصورة لا تُرسل لأي مكان."
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: false
+        UIBackgroundModes:
+          - audio
+        CFBundleURLTypes:
+          - CFBundleURLName: app.miyu.companion
+            CFBundleURLSchemes:
+              - miyu
+
+  MiyuWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MiyuCompanion/Widgets
+      - path: MiyuCompanion/MiyuViewModel.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.miyu.companion.widgets
+    info:
+      path: MiyuCompanion/Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: Miyu Widgets
+        CFBundleShortVersionString: "1.2.5"
+        CFBundleVersion: "15"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  MiyuShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MiyuShare
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.miyu.companion.share
+    info:
+      path: MiyuShare/Info.plist
+      properties:
+        CFBundleDisplayName: Miyu Share
+        CFBundleShortVersionString: "1.2.5"
+        CFBundleVersion: "15"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).MiyuShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1

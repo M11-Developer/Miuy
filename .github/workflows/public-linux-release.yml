@@ -9,14 +9,32 @@ on:
       - 'public/**'
       - 'tools/**'
       - 'package.json'
+      - 'index.html'
+      - 'vite.config.js'
+      - 'README-Linux.md'
+      - 'RELEASE-NOTES-1.2.5.md'
       - '.github/workflows/public-linux-release.yml'
   workflow_dispatch:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
+    name: Build Linux ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+            experimental: false
+          # arm64 is best effort: GitHub's arm64 public runners are still rolling out.
+          # If the runner is unavailable the amd64 release is still published.
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            experimental: true
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.experimental }}
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -32,39 +50,36 @@ jobs:
           go-version: '1.22'
           cache-dependency-path: desktop/go.mod
 
-      - name: Install Linux deps
+      - name: Install native Linux dependencies (GTK / WebKitGTK / tray)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config || true
-          # Try to install both webkit versions, tolerant
-          sudo apt-get install -y libwebkit2gtk-4.0-dev || echo "4.0 not available"
-          sudo apt-get install -y libwebkit2gtk-4.1-dev || echo "4.1 not available"
-          # Show installed
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf pkg-config xvfb || true
+          sudo apt-get install -y libwebkit2gtk-4.0-dev || echo "webkit2gtk-4.0-dev not available on this image"
+          sudo apt-get install -y libwebkit2gtk-4.1-dev || echo "webkit2gtk-4.1-dev not available on this image"
           pkg-config --modversion gtk+-3.0 || true
           pkg-config --modversion webkit2gtk-4.0 || echo "webkit2gtk-4.0 not found"
           pkg-config --modversion webkit2gtk-4.1 || echo "webkit2gtk-4.1 not found"
-          dpkg -l | grep webkit || true
-          # If only 4.1 exists, create pkg-config alias for 4.0 -> 4.1 via environment hack
           if pkg-config --exists webkit2gtk-4.1 && ! pkg-config --exists webkit2gtk-4.0; then
-            echo "Only 4.1 found, will set PKG_CONFIG to use 4.1 for 4.0 requests"
-            # Create a wrapper pc file
+            echo "Only WebKitGTK 4.1 present - installing a pkg-config alias so webview builds stay unchanged"
             sudo mkdir -p /usr/local/lib/pkgconfig
-            sudo sh -c 'cat > /usr/local/lib/pkgconfig/webkit2gtk-4.0.pc <<EOF
-          Name: WebKitGTK 4.0 alias to 4.1
-          Description: Alias
+            sudo tee /usr/local/lib/pkgconfig/webkit2gtk-4.0.pc >/dev/null <<'EOF'
+          Name: WebKitGTK 4.0 (alias)
+          Description: Alias to webkit2gtk-4.1
           Version: 2.44.0
           Requires: webkit2gtk-4.1
-          EOF'
-            echo "PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          Libs:
+          Cflags:
+          EOF
+            echo "PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
           fi
 
       - name: npm ci
         run: npm ci
 
-      - name: Build web
+      - name: Build web UI
         run: npm run build
 
-      - name: Build portable
+      - name: Build portable HTML fallback
         run: npm run build:portable
 
       - name: Go mod tidy
@@ -73,37 +88,22 @@ jobs:
           go env
           go mod tidy -v
           cat go.mod
-          ls -lh
 
-      - name: Build Linux binary amd64
+      - name: Build native Linux binary (${{ matrix.arch }})
         working-directory: desktop
         run: |
-          set -x
-          # Print pkg-config
-          pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.0 2>&1 | head -n 20 || pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.1 2>&1 | head -n 20 || true
-          # Build with verbose, capture log
-          go build -x -trimpath -ldflags="-s -w -X main.ownerBuildID=public-linux-${{ github.sha }} -X main.AppVersion=1.2.0" -o ../Miyu-Linux-x86_64 . 2>&1 | tee build.log
-          echo "=== BUILD LOG TAIL ==="
-          tail -n 200 build.log
-          file ../Miyu-Linux-x86_64
-          ls -lh ../Miyu-Linux-x86_64
+          go build -trimpath -ldflags="-s -w -X main.AppVersion=1.2.5 -X main.BuildChannel=public -X main.ownerBuildID=public-linux-${{ github.sha }}" -o ../Miyu-Linux-${{ matrix.arch }} . 2>&1 | tee build.log
+          tail -n 100 build.log
+          file ../Miyu-Linux-${{ matrix.arch }}
+          ls -lh ../Miyu-Linux-${{ matrix.arch }}
+          if [ ! -s "../Miyu-Linux-${{ matrix.arch }}" ]; then echo "native binary missing"; exit 1; fi
 
-      - name: Show build log on failure (always)
-        if: always()
-        working-directory: desktop
+      - name: Create AppDir and build AppImage
         run: |
-          echo "=== BUILD LOG FULL (last 500 lines) ==="
-          tail -n 500 build.log || echo "no build.log"
-          echo "=== GO ENV ==="
-          go env
-
-      - name: Create AppDir
-        if: success()
-        run: |
-          mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/share/applications
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp Miyu-Linux-x86_64 AppDir/usr/bin/miyu
+          ARCH="${{ matrix.arch }}"
+          BIN="Miyu-Linux-${ARCH}"
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cp "$BIN" AppDir/usr/bin/miyu
           cp public/assets/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/miyu.png || echo "icon missing"
           cat > AppDir/usr/share/applications/miyu.desktop <<'EOF'
           [Desktop Entry]
@@ -124,70 +124,204 @@ jobs:
           chmod +x AppDir/AppRun
           cp AppDir/usr/share/applications/miyu.desktop AppDir/miyu.desktop
           cp AppDir/usr/share/icons/hicolor/256x256/apps/miyu.png AppDir/miyu.png || true
+          if [ "$ARCH" = "x86_64" ]; then
+            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool || \
+              curl -fsSL -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+            chmod +x appimagetool
+            ./appimagetool AppDir "Miyu-Linux-${ARCH}.AppImage" || sudo ./appimagetool AppDir "Miyu-Linux-${ARCH}.AppImage"
+          else
+            echo "Skipping appimagetool on arm64 (no official tool binary); the .deb and the raw binary are published instead."
+          fi
+          ls -lh *.AppImage 2>/dev/null || echo "no AppImage produced on this runner"
 
-      - name: Build AppImage
-        if: success()
+      - name: Verify AppImage is a real AppImage (type 2)
         run: |
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
-          chmod +x appimagetool
-          ./appimagetool AppDir Miyu-Linux-x86_64.AppImage || sudo ./appimagetool AppDir Miyu-Linux-x86_64.AppImage || cp Miyu-Linux-x86_64 Miyu-Linux-x86_64.AppImage
-          ls -lh *.AppImage || true
+          APPIMAGE="Miyu-Linux-${{ matrix.arch }}.AppImage"
+          if [ ! -f "$APPIMAGE" ]; then
+            echo "No AppImage on this architecture - .deb and native binary are the deliverables here."
+            exit 0
+          fi
+          python3 - "$APPIMAGE" <<'EOF'
+          import sys
+          path = sys.argv[1]
+          head = open(path, 'rb').read(12)
+          assert head[:4] == b'\x7fELF', f"{path} is not an ELF AppImage"
+          assert head[8:11] == b'AI\x02', f"{path} is not an AppImage type 2"
+          print(f"{path}: ELF + AppImage magic AI\\x02 confirmed")
+          EOF
+          ls -l "$APPIMAGE"
 
-      - name: Build deb
-        if: success()
+      - name: Build .deb
         run: |
+          ARCH="${{ matrix.arch }}"
+          DEBARCH="amd64"
+          [ "$ARCH" = "arm64" ] && DEBARCH="arm64"
           mkdir -p deb/DEBIAN deb/usr/bin deb/usr/share/applications deb/usr/share/icons/hicolor/256x256/apps deb/usr/share/doc/miyu
-          cp Miyu-Linux-x86_64 deb/usr/bin/miyu
+          cp "Miyu-Linux-${ARCH}" deb/usr/bin/miyu
           chmod +x deb/usr/bin/miyu
           cp AppDir/usr/share/applications/miyu.desktop deb/usr/share/applications/ || true
           cp AppDir/usr/share/icons/hicolor/256x256/apps/miyu.png deb/usr/share/icons/hicolor/256x256/apps/ || true
           cat > deb/DEBIAN/control <<EOF
           Package: miyu
-          Version: 1.2.0
+          Version: 1.2.5
           Section: utils
           Priority: optional
-          Architecture: amd64
+          Architecture: ${DEBARCH}
           Depends: libgtk-3-0, libwebkit2gtk-4.0-0 | libwebkit2gtk-4.1-0
           Maintainer: Miyu Studio <miyu@example.com>
-          Description: Miyu — a little company, a little magic
-           Native Linux, not just Portable HTML.
+          Description: Miyu - a little company, a little magic
+           Native Linux build (WebKitGTK + Go backend), not just Portable HTML.
           EOF
           echo "Copyright 2026 Miyu Studio" > deb/usr/share/doc/miyu/copyright
-          dpkg-deb --build deb Miyu-Linux-x86_64.deb
+          dpkg-deb --build deb "Miyu-Linux-${ARCH}.deb"
+          dpkg-deb --info "Miyu-Linux-${ARCH}.deb" | head -15
           ls -lh *.deb
 
-      - name: SHA256
-        if: success()
+      - name: Verification report
         run: |
-          sha256sum Miyu-Linux-x86_64 Miyu-Linux-x86_64.AppImage Miyu-Linux-x86_64.deb deliverables/Miyu-Portable.html > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          {
+            echo "Miyu Linux verification report (public build)"
+            echo "architecture : ${{ matrix.arch }}"
+            echo "runner       : ${{ matrix.runner }}"
+            echo "commit       : ${{ github.sha }}"
+            echo "version      : 1.2.5"
+            echo "--- native binary ---"
+            file "Miyu-Linux-${{ matrix.arch }}" || true
+            ls -l "Miyu-Linux-${{ matrix.arch }}" || true
+            echo "--- packages ---"
+            ls -l *.AppImage *.deb 2>/dev/null || true
+            echo "--- WebKitGTK used ---"
+            pkg-config --modversion webkit2gtk-4.0 2>/dev/null || echo "webkit2gtk-4.0 pkg-config not present"
+          } > VERIFICATION-Linux-${{ matrix.arch }}.txt
+          cat VERIFICATION-Linux-${{ matrix.arch }}.txt
+
+      - name: SHA256SUMS (per architecture)
+        run: |
+          ARCH="${{ matrix.arch }}"
+          rm -f SHA256SUMS-Linux-${ARCH}.txt
+          for f in Miyu-Linux-${ARCH} Miyu-Linux-${ARCH}.AppImage Miyu-Linux-${ARCH}.deb deliverables/Miyu-Portable.html; do
+            if [ -f "$f" ]; then
+              sha256sum "$f" | sed "s|  |  |" >> SHA256SUMS-Linux-${ARCH}.txt
+            fi
+          done
+          cat SHA256SUMS-Linux-${ARCH}.txt
 
       - name: Upload artifacts
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Miyu-Linux
+          name: miyu-linux-${{ matrix.arch }}
           path: |
-            Miyu-Linux-x86_64
-            Miyu-Linux-x86_64.AppImage
-            Miyu-Linux-x86_64.deb
-            SHA256SUMS.txt
-
-      - name: Release
-        if: success()
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            Miyu-Linux-x86_64.AppImage
-            Miyu-Linux-x86_64.deb
-            SHA256SUMS.txt
+            Miyu-Linux-${{ matrix.arch }}
+            Miyu-Linux-${{ matrix.arch }}.AppImage
+            Miyu-Linux-${{ matrix.arch }}.deb
+            SHA256SUMS-Linux-${{ matrix.arch }}.txt
+            VERIFICATION-Linux-${{ matrix.arch }}.txt
             deliverables/Miyu-Portable.html
-          tag_name: v1.2.0-linux-${{ github.run_number }}
-          name: Miyu Linux Public v1.2.0
+          if-no-files-found: error
+          retention-days: 30
+
+  release-linux:
+    name: Publish Linux release
+    needs: build-linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: miyu-linux-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: Show what we have
+        run: find artifacts -type f -printf '%p  %s bytes\n' | sort
+
+      - name: Refuse to publish without real packages
+        run: |
+          set -e
+          APPS=$(ls artifacts/*.AppImage 2>/dev/null | wc -l)
+          DEBS=$(ls artifacts/*.deb 2>/dev/null | wc -l)
+          BINS=$(ls artifacts/Miyu-Linux-* 2>/dev/null | grep -v '\.' | wc -l)
+          echo "AppImages=$APPS debs=$DEBS raw binaries=$BINS"
+          if [ "$APPS" -eq 0 ] && [ "$DEBS" -eq 0 ]; then
+            echo "::error::No AppImage and no .deb were produced - not creating a release without assets."
+            exit 1
+          fi
+          for d in artifacts/*.deb; do
+            dpkg-deb --info "$d" | grep -q "Version: 1.2.5" || { echo "::error::$d is not version 1.2.5"; exit 1; }
+          done
+
+      - name: Assemble release files
+        run: |
+          mkdir -p release
+          cp artifacts/* release/ 2>/dev/null || true
+          cp README-Linux.md release/ 2>/dev/null || true
+          cp README.md release/ 2>/dev/null || true
+          cp LICENSE release/LICENSE.txt 2>/dev/null || true
+          cp THIRD-PARTY-NOTICES.txt release/ 2>/dev/null || true
+          cp RELEASE-NOTES-1.2.5.md release/ 2>/dev/null || true
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Compute release tag
+        id: tag
+        run: |
+          BASE="v1.2.5-linux-${GITHUB_RUN_NUMBER}"
+          TAG="$BASE"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "refs/tags/$TAG"; then
+            TAG="$BASE-${GITHUB_RUN_ATTEMPT}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag will be: $TAG"
+
+      - name: Create GitHub Release v1.2.5 (Linux)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Miyu Linux Public v1.2.5 (${{ steps.tag.outputs.tag }})
+          fail_on_unmatched_files: true
+          files: release/*
           body: |
-            Public Linux Release
-            - AppImage and deb
-            - Native Linux, not just Portable HTML
-            - Built from ${{ github.sha }}
+            ## Miyu for Linux — v1.2.5 (native, not just a web page)
+
+            Built on GitHub-hosted Linux runners from commit `${{ github.sha }}`.
+
+            ### Files
+            | File | What it is |
+            | --- | --- |
+            | `Miyu-Linux-x86_64.AppImage` | **Primary for most users.** Single-file native app (GTK + WebKitGTK + Go backend). `chmod +x` then run. |
+            | `Miyu-Linux-x86_64.deb` | Debian/Ubuntu package (`sudo dpkg -i`, or `apt install ./file.deb`). |
+            | `Miyu-Linux-arm64.deb` | arm64 build when the arm64 runner was available (best effort). |
+            | `Miyu-Linux-*` | The raw native binary, for users who prefer no packaging at all. |
+            | `Miyu-Portable.html` | Fallback browser edition, not the native app. |
+            | `SHA256SUMS.txt` | SHA-256 for every file above. |
+            | `VERIFICATION-Linux-*.txt` | Per-architecture report: `file` output, package list, WebKitGTK version used. |
+
+            ### Native features in this build
+            - WebKitGTK window with the UI embedded in the binary, Wayland and X11 both work through GTK
+            - Tray-style behaviour and always-on-top requests (exposed to the window manager, prioritised live)
+            - Drag & drop support, XDG storage (`~/.local/share/miyu`), log file kept private at 0600
+            - AES-GCM encrypted local state with atomic writes and backup/restore
+            - Same loopback bridge guards as Windows: session token, Host validation, origin checks
+            - Free local AI through Ollama or any OpenAI-compatible endpoint (localhost/HTTPS only)
+
+            ### Install
+            ```bash
+            chmod +x Miyu-Linux-x86_64.AppImage && ./Miyu-Linux-x86_64.AppImage
+            # or
+            sudo apt install ./Miyu-Linux-x86_64.deb && miyu
+            ```
+            Requires GTK 3 and WebKitGTK 4.0 **or** 4.1 (most current distributions ship 4.1, which is supported).
+
+            ### Privacy / safety
+            - No background microphone, no camera, no screen capture, no reading of other applications.
+            - The public build has no owner PIN hash, so the Owner Panel stays disabled.
+            - Vodafone Cash support card (01027653109) is copy-only — no payment API, no wallet PIN, nothing logged.
+
+            Verify your download with `sha256sum -c SHA256SUMS.txt`.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
